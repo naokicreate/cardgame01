@@ -18,6 +18,7 @@ interface Room {
     name: string
   } | null
   status: 'waiting' | 'playing' | 'finished'
+  gameState?: GameState // ゲーム状態を追加
 }
 
 // WebSocket接続クライアント
@@ -26,6 +27,28 @@ interface Client {
   name: string
   ws: WebSocket
   roomId: string | null
+}
+
+// ゲーム状態の型定義 (仮)
+// クライアント側の`players`配列やその他のゲーム情報に合わせて調整が必要
+interface PlayerState {
+  id: string;
+  name: string;
+  lp: number;
+  hand: any[]; // カード情報の型を定義する必要がある
+  fieldUnits: any[];
+  fieldTrap: any | null;
+  fieldResource: any | null;
+  deckSize: number; // デッキ枚数も管理
+  isTurnPlayer: boolean;
+}
+
+interface GameState {
+  players: PlayerState[];
+  currentTurnPlayerId: string | null;
+  gamePhase: string; // 'main', 'battle', 'gameOver'など
+  // その他、ゲームに必要な状態 (例: ログ、選択中のカードなど)
+  gameLog: string[];
 }
 
 // ゲーム状態
@@ -232,18 +255,46 @@ function handleClientMessage(clientId: string, data: any) {
       
       // ゲーム開始通知
       setTimeout(() => {
+        // ゲーム状態の初期化
+        const hostPlayerId = roomToJoin.host.id;
+        const guestPlayerId = roomToJoin.guest!.id;
+
+        const initialGameState: GameState = {
+          players: [
+            {
+              id: hostPlayerId, // ホストをプレイヤー1とする
+              name: roomToJoin.host.name,
+              lp: 20, // 初期LPなど、ゲームのルールに合わせて設定
+              hand: [],
+              fieldUnits: [],
+              fieldTrap: null,
+              fieldResource: null,
+              deckSize: 40, // 仮のデッキ枚数
+              isTurnPlayer: true, // ホストが先行
+            },
+            {
+              id: guestPlayerId, // ゲストをプレイヤー2とする
+              name: roomToJoin.guest!.name,
+              lp: 20,
+              hand: [],
+              fieldUnits: [],
+              fieldTrap: null,
+              fieldResource: null,
+              deckSize: 40,
+              isTurnPlayer: false,
+            }
+          ],
+          currentTurnPlayerId: hostPlayerId,
+          gamePhase: 'initial', // または 'main'
+          gameLog: [`Game started between ${roomToJoin.host.name} and ${roomToJoin.guest!.name}`],
+        };
+        roomToJoin.gameState = initialGameState;
+
         broadcastToRoom(roomToJoin.id, {
           type: 'gameStart',
-          players: {
-            host: {
-              id: roomToJoin.host.id,
-              name: roomToJoin.host.name
-            },
-            guest: {
-              id: roomToJoin.guest!.id,
-              name: roomToJoin.guest!.name
-            }
-          }
+          gameState: initialGameState, // 初期ゲーム状態を送信
+          hostPlayerId: hostPlayerId, // クライアント側で自分がどちらか判断するため
+          guestPlayerId: guestPlayerId
         })
       }, 1000)
       break
@@ -336,25 +387,55 @@ function handleClientMessage(clientId: string, data: any) {
       
       // ゲーム開始通知
       setTimeout(() => {
+        // ゲーム状態の初期化 (createRoom -> joinRoom の流れでも gameState が必要)
+        const hostPlayerId = room.host.id;
+        const guestPlayerId = room.guest!.id; // joinRoom の時点で guest は存在するはず
+
+        const initialGameState: GameState = {
+           players: [
+            {
+              id: hostPlayerId,
+              name: room.host.name,
+              lp: 20,
+              hand: [],
+              fieldUnits: [],
+              fieldTrap: null,
+              fieldResource: null,
+              deckSize: 40,
+              isTurnPlayer: true,
+            },
+            {
+              id: guestPlayerId,
+              name: room.guest!.name,
+              lp: 20,
+              hand: [],
+              fieldUnits: [],
+              fieldTrap: null,
+              fieldResource: null,
+              deckSize: 40,
+              isTurnPlayer: false,
+            }
+          ],
+          currentTurnPlayerId: hostPlayerId,
+          gamePhase: 'initial',
+          gameLog: [`Game started between ${room.host.name} and ${room.guest!.name}`],
+        };
+        room.gameState = initialGameState;
+
+
         broadcastToRoom(room.id, {
           type: 'gameStart',
-          players: {
-            host: {
-              id: room.host.id,
-              name: room.host.name
-            },
-            guest: {
-              id: room.guest!.id,
-              name: room.guest!.name
-            }
-          }
+          gameState: initialGameState, // 初期ゲーム状態を送信
+          hostPlayerId: hostPlayerId,
+          guestPlayerId: guestPlayerId
         })
       }, 1000)
       break
     
     case 'gameAction':
       // ゲームアクション処理
-      if (!client.roomId || !rooms[client.roomId]) {
+      const currentRoom = rooms[client.roomId!]
+      if (!client.roomId || !currentRoom || !currentRoom.gameState) {
         client.ws.send(JSON.stringify({
           type: 'error',
           message: 'Not in a valid room'
@@ -372,11 +453,28 @@ function handleClientMessage(clientId: string, data: any) {
       if (targetId) {
         const targetClient = clients[targetId]
         if (targetClient && targetClient.ws) {
-          targetClient.ws.send(JSON.stringify({
-            type: 'opponentAction',
-            action: data.action,
-            data: data.data
-          }))
+          // gameState を更新するロジックをここに追加
+          // 例: data.action に応じて currentRoom.gameState を変更
+          // この例では、単純に相手にアクションを転送するだけでなく、
+          // サーバーで状態を更新し、更新後の gameState をブロードキャストする
+          
+          // TODO: data.action と data.data に基づいて gameState を更新する
+          // 例: カードプレイ、攻撃、ターン終了など
+          // if (data.action === 'playCard') {
+          //   // gameState.players の手札やフィールドを更新
+          // } else if (data.action === 'endTurn') {
+          //   // gameState.currentTurnPlayerId を更新
+          // }
+          // currentRoom.gameState.gameLog.push(`${client.name} performed ${data.action}`);
+
+          // 更新されたゲーム状態を部屋の全員にブロードキャスト
+          broadcastToRoom(client.roomId, {
+            type: 'gameStateUpdate', // 新しいメッセージタイプ
+            gameState: currentRoom.gameState,
+            actionOriginClientId: clientId, // どのアクションによる更新か
+            originalAction: data.action,
+            originalData: data.data
+          });
         }
       }
       break

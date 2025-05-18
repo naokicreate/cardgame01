@@ -1046,10 +1046,13 @@
         function clearHighlights() {
             document.querySelectorAll('.targetable').forEach(el => el.classList.remove('targetable'));
             players.forEach(p => {
-                const el = p.playerElements.lpEl.parentElement;
-                if (el) {
-                    el.classList.remove('targetable');
-                    el.onclick = null;
+                // playerElements および lpEl が存在するかチェックする
+                if (p && p.playerElements && p.playerElements.lpEl) {
+                    const el = p.playerElements.lpEl.parentElement;
+                    if (el) {
+                        el.classList.remove('targetable');
+                        el.onclick = null;
+                    }
                 }
             });
         }
@@ -1475,20 +1478,36 @@
                     console.log(`部屋に参加: ${message.room.name} (ID: ${message.room.id})`);
                     break;
                     
-                case 'playerJoined':
-                    // 他のプレイヤーが部屋に参加した
-                    connectionStatus.textContent = `プレイヤー「${message.player.name}」が参加しました`;
-                    console.log(`プレイヤーが参加: ${message.player.name} (ID: ${message.player.id})`);
+                case 'playerJoined': // playerJoined はゲスト参加時にホストに通知される。ゲーム開始は gameStart で処理
+                    console.log('Player joined the room:', message.player);
+                    // UI更新やメッセージ表示など、必要に応じて
+                    showMessage(`${message.player.name} が入室しました。`);
                     break;
-                      case 'gameStart':
-                    // ゲーム開始
+
+                case 'gameStart': // ゲーム開始メッセージ
                     multiplayerModal.style.display = 'none';
                     isMultiplayerMode = true;
-                    console.log('ゲーム開始:', message.players);
-                    startMultiplayerGame(message.players);
+                    console.log('Game starting with state:', message.gameState);
+                    // サーバーからの gameState を使ってゲームを初期化
+                    initializeGameFromState(message.gameState, message.hostPlayerId, message.guestPlayerId);
                     break;
                     
-                case 'opponentAction':
+                case 'gameStateUpdate': // ゲーム状態更新メッセージ
+                    if (isMultiplayerMode) {
+                        console.log('Received gameState update:', message.gameState);
+                        // サーバーからの新しい gameState でローカルのゲーム状態を更新
+                        updateGameFromState(message.gameState);
+                        // ログにアクションの実行者と内容を記録（任意）
+                        const actionPlayer = message.gameState.players.find(p => p.id === message.actionOriginClientId);
+                        if (actionPlayer) {
+                            logMessage(`${actionPlayer.name} が ${message.originalAction} を実行しました。`, true);
+                        }
+                    } else {
+                        console.warn('Received gameStateUpdate but not in multiplayer mode.');
+                    }
+                    break;
+
+                case 'opponentAction': // これは gameStateUpdate に置き換わる想定だが、互換性のために残すか検討
                     // 相手のアクション
                     if (isMultiplayerMode) {
                         console.log('相手のアクション:', message.action, message.data);
@@ -1525,46 +1544,124 @@
             }
         }
         
-        // マルチプレイヤーゲーム開始
-        function startMultiplayerGame(gamePlayers) {
-            // プレイヤー名設定
-            if (isHost) {
-                players[0].name = gamePlayers.host.name;
-                players[1].name = gamePlayers.guest.name;
-            } else {
-                players[0].name = gamePlayers.guest.name;
-                players[1].name = gamePlayers.host.name;
+        // マルチプレイヤーゲーム開始 (サーバーからのGameStateで初期化)
+        function initializeGameFromState(serverGameState, hostId, guestId) {
+            // 自分のクライアントIDとホストID/ゲストIDを比較して、自分がどちらのプレイヤーか判断
+            const amIHost = clientId === hostId;
+            const myPlayerServerState = amIHost ? serverGameState.players.find(p => p.id === hostId) : serverGameState.players.find(p => p.id === guestId);
+            const opponentPlayerServerState = amIHost ? serverGameState.players.find(p => p.id === guestId) : serverGameState.players.find(p => p.id === hostId);
+
+            if (!myPlayerServerState || !opponentPlayerServerState) {
+                console.error("Could not determine player roles from server state.");
+                showMessage("ゲームの初期化に失敗しました。");
+                return;
             }
+
+            // players 配列をサーバーの状態に合わせて設定 (自分を常に players[0] にする)
+            players = [
+                {
+                    ...myPlayerServerState, // サーバーからの状態をコピー
+                    id: "player1",          // UI上のIDは固定
+                    isTurnPlayer: myPlayerServerState.isTurnPlayer, // サーバーからのターン情報を採用
+                    // deck, discardPile はサーバー側で枚数のみ管理しているため、クライアント側で別途初期化が必要な場合がある
+                    // この例ではサーバーの deckSize を使う
+                    deck: Array(myPlayerServerState.deckSize).fill({}).map(() => createCardInstance(cardPool[Math.floor(Math.random() * cardPool.length)])), // 仮のデッキ生成
+                    discardPile: []
+                },
+                {
+                    ...opponentPlayerServerState,
+                    id: "player2",
+                    isTurnPlayer: opponentPlayerServerState.isTurnPlayer,
+                    deck: Array(opponentPlayerServerState.deckSize).fill({}).map(() => createCardInstance(cardPool[Math.floor(Math.random() * cardPool.length)])),
+                    discardPile: []
+                }
+            ];
+
+            // currentPlayerIndex をサーバーの状態に基づいて設定
+            currentPlayerIndex = players[0].isTurnPlayer ? 0 : 1;
             
+            // ゲームフェーズなどもサーバーの状態を反映
+            gamePhase = serverGameState.gamePhase || "main"; // サーバーにgamePhaseがない場合のフォールバック
+            turnCount = serverGameState.gameLog ? serverGameState.gameLog.length : 1; // 簡易的なターン数
+
             // AIモードを無効化
             isAIMode = false;
-            
-            // ゲーム初期化
-            initGame();
-              // 先攻は常にホスト側から
-            // ホストがプレイヤー1、ゲストがプレイヤー2となるよう設定
-            if (isHost) {
-                currentPlayerIndex = 0;                   // ホストは自分がプレイヤー1で先攻
-                players[0].isTurnPlayer = true;
-                players[1].isTurnPlayer = false;
-                players[0].id = "player1";               // 自分は常にplayer1
-                players[1].id = "player2";
-            } else {
-                currentPlayerIndex = 1;                   // ゲストは相手がプレイヤー1で先攻
-                players[0].isTurnPlayer = false;
-                players[1].isTurnPlayer = true;
-                players[0].id = "player1";               // 自分は常にplayer1
-                players[1].id = "player2";
-            }
-            
-            // ゲーム開始アナウンス
+            isHost = amIHost; // isHost フラグも設定
+
             logMessage('マルチプレイヤーモード: ゲームを開始します', true);
             logMessage(`${players[0].name} vs ${players[1].name}`, true);
-            logMessage(`${players[currentPlayerIndex].name} の番です`, true);
+            if (players[currentPlayerIndex]) {
+                 logMessage(`${players[currentPlayerIndex].name} の番です`, true);
+            } else {
+                logMessage("ターンプレイヤー情報を取得できませんでした。", true);
+            }
             
             updateAllUI();
-            showMessage('対戦相手が見つかりました！');
+            showMessage('対戦相手が見つかりました！ゲーム開始！');
         }
+
+        // サーバーからのGameStateで既存のゲーム状態を更新する関数
+        function updateGameFromState(serverGameState) {
+            const amIHost = isHost; // initializeGameFromState で設定された isHost を使用
+            const myPlayerServerState = amIHost 
+                ? serverGameState.players.find(p => p.id === clientId) 
+                : serverGameState.players.find(p => p.id !== clientId && serverGameState.players.some(pl => pl.id === clientId)); // 自分がゲストの場合、相手がホストのはず
+            
+            const opponentPlayerServerState = amIHost 
+                ? serverGameState.players.find(p => p.id !== clientId && serverGameState.players.some(pl => pl.id === clientId))
+                : serverGameState.players.find(p => p.id === clientId);
+
+            if (!myPlayerServerState || !opponentPlayerServerState) {
+                console.error("Could not map server player state to local players.", serverGameState, clientId, isHost);
+                // どちらかのプレイヤー情報が見つからない場合、同期が取れていない可能性
+                // ここでエラー処理や再同期の試みが必要になる場合がある
+                // 今回は、見つかった方だけ更新を試みる
+            }
+
+            // players[0] (自分) の状態を更新
+            if (myPlayerServerState) {
+                players[0] = {
+                    ...players[0], // 既存のクライアント側情報をベースに
+                    ...myPlayerServerState, // サーバーからの情報で上書き
+                    id: "player1", // UI上のIDは不変
+                    // deck, discardPile はサーバーからの枚数情報に基づいてクライアント側で調整が必要な場合がある
+                    // 簡単のため、ここでは hand, fieldUnits, lp などを直接上書き
+                };
+            }
+
+            // players[1] (相手) の状態を更新
+            if (opponentPlayerServerState) {
+                players[1] = {
+                    ...players[1],
+                    ...opponentPlayerServerState,
+                    id: "player2",
+                };
+            }
+            
+            // currentPlayerIndex, gamePhase などを更新
+            currentPlayerIndex = players[0].isTurnPlayer ? 0 : 1;
+            gamePhase = serverGameState.gamePhase || gamePhase;
+            // turnCount なども必要に応じて更新
+
+            // ゲームログをサーバーのものに置き換えるか、追記するかは設計による
+            // この例では、サーバーのログで上書き（ただし、クライアント側で表示用に整形が必要な場合も）
+            if (serverGameState.gameLog) {
+                gameLogEl.innerHTML = ''; // 既存のログをクリア
+                serverGameState.gameLog.forEach(log => logMessage(log, false)); // サーバーのログを表示
+            }
+
+            updateAllUI();
+            // 必要に応じて、特定のアクション後のメッセージ表示など
+            // 例: if (message.originalAction === 'endTurn') showMessage(`${players[currentPlayerIndex].name} のターンです`);
+        }
+
+        // startMultiplayerGame は initializeGameFromState に置き換えられるため、
+        // 既存の startMultiplayerGame のロジックは initializeGameFromState に統合されるか、削除/コメントアウトします。
+        /*
+        function startMultiplayerGame(gamePlayers) {
+            // ... (この関数は initializeGameFromState に置き換えられました) ...
+        }
+        */
         
         // サーバーにゲームアクションを送信
         function sendGameAction(action, data) {

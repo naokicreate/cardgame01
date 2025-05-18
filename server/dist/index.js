@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { WebSocket, WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { createServer } from 'node:http';
@@ -8,6 +9,13 @@ const rooms = {};
 const clients = {};
 // Honoアプリ
 const app = new Hono();
+// CORSを有効化
+app.use('*', cors({
+    origin: '*',
+    allowHeaders: ['Content-Type'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+    exposeHeaders: ['Content-Type']
+}));
 // 基本的なAPI
 app.get('/', (c) => {
     return c.text('CardGame Server is running!');
@@ -29,8 +37,8 @@ const port = 3000;
 // WebSocketサーバー
 const wss = new WebSocketServer({ server: httpServer });
 wss.on('connection', (ws) => {
-    console.log('Client connected');
     const clientId = uuidv4();
+    console.log(`クライアント接続: ID=${clientId}`);
     // クライアント登録（初期状態）
     clients[clientId] = {
         id: clientId,
@@ -111,6 +119,114 @@ function handleClientMessage(clientId, data) {
                 name: client.name
             }));
             break;
+        // クライアントからroomIdのみが送信された場合、joinRoomとして処理
+        case undefined:
+            if (data.roomId) {
+                console.log(`Client ${clientId} sent roomId directly, treating as joinRoom`);
+                data.type = 'joinRoom';
+                // 処理を継続（下のjoinRoomケースにフォールスルー）
+            }
+            else {
+                console.log(`Client ${clientId} sent message without type or roomId:`, data);
+                break;
+            }
+        case 'joinRoom':
+            // 部屋に参加
+            const roomToJoin = rooms[data.roomId];
+            if (!roomToJoin) {
+                client.ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Room not found'
+                }));
+                return;
+            }
+            if (roomToJoin.status !== 'waiting') {
+                client.ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Room is not available'
+                }));
+                return;
+            }
+            if (roomToJoin.host.id === clientId) {
+                client.ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'You are already in this room as host'
+                }));
+                return;
+            }
+            // ゲストとして参加
+            roomToJoin.guest = {
+                id: clientId,
+                name: client.name
+            };
+            roomToJoin.status = 'playing';
+            client.roomId = data.roomId;
+            // ホストに通知
+            const hostClientForJoin = clients[roomToJoin.host.id];
+            if (hostClientForJoin && hostClientForJoin.ws) {
+                hostClientForJoin.ws.send(JSON.stringify({
+                    type: 'playerJoined',
+                    player: {
+                        id: clientId,
+                        name: client.name
+                    }
+                }));
+            }
+            // ゲストに通知
+            client.ws.send(JSON.stringify({
+                type: 'joinedRoom',
+                room: {
+                    id: roomToJoin.id,
+                    name: roomToJoin.name,
+                    host: {
+                        id: roomToJoin.host.id,
+                        name: roomToJoin.host.name
+                    }
+                }
+            }));
+            // ゲーム開始通知
+            setTimeout(() => {
+                // ゲーム状態の初期化
+                const hostPlayerId = roomToJoin.host.id;
+                const guestPlayerId = roomToJoin.guest.id;
+                const initialGameState = {
+                    players: [
+                        {
+                            id: hostPlayerId, // ホストをプレイヤー1とする
+                            name: roomToJoin.host.name,
+                            lp: 20, // 初期LPなど、ゲームのルールに合わせて設定
+                            hand: [],
+                            fieldUnits: [],
+                            fieldTrap: null,
+                            fieldResource: null,
+                            deckSize: 40, // 仮のデッキ枚数
+                            isTurnPlayer: true, // ホストが先行
+                        },
+                        {
+                            id: guestPlayerId, // ゲストをプレイヤー2とする
+                            name: roomToJoin.guest.name,
+                            lp: 20,
+                            hand: [],
+                            fieldUnits: [],
+                            fieldTrap: null,
+                            fieldResource: null,
+                            deckSize: 40,
+                            isTurnPlayer: false,
+                        }
+                    ],
+                    currentTurnPlayerId: hostPlayerId,
+                    gamePhase: 'initial', // または 'main'
+                    gameLog: [`Game started between ${roomToJoin.host.name} and ${roomToJoin.guest.name}`],
+                };
+                roomToJoin.gameState = initialGameState;
+                broadcastToRoom(roomToJoin.id, {
+                    type: 'gameStart',
+                    gameState: initialGameState, // 初期ゲーム状態を送信
+                    hostPlayerId: hostPlayerId, // クライアント側で自分がどちらか判断するため
+                    guestPlayerId: guestPlayerId
+                });
+            }, 1000);
+            break;
         case 'createRoom':
             // 部屋作成
             const roomId = uuidv4();
@@ -189,24 +305,51 @@ function handleClientMessage(clientId, data) {
             }));
             // ゲーム開始通知
             setTimeout(() => {
+                // ゲーム状態の初期化 (createRoom -> joinRoom の流れでも gameState が必要)
+                const hostPlayerId = room.host.id;
+                const guestPlayerId = room.guest.id; // joinRoom の時点で guest は存在するはず
+                const initialGameState = {
+                    players: [
+                        {
+                            id: hostPlayerId,
+                            name: room.host.name,
+                            lp: 20,
+                            hand: [],
+                            fieldUnits: [],
+                            fieldTrap: null,
+                            fieldResource: null,
+                            deckSize: 40,
+                            isTurnPlayer: true,
+                        },
+                        {
+                            id: guestPlayerId,
+                            name: room.guest.name,
+                            lp: 20,
+                            hand: [],
+                            fieldUnits: [],
+                            fieldTrap: null,
+                            fieldResource: null,
+                            deckSize: 40,
+                            isTurnPlayer: false,
+                        }
+                    ],
+                    currentTurnPlayerId: hostPlayerId,
+                    gamePhase: 'initial',
+                    gameLog: [`Game started between ${room.host.name} and ${room.guest.name}`],
+                };
+                room.gameState = initialGameState;
                 broadcastToRoom(room.id, {
                     type: 'gameStart',
-                    players: {
-                        host: {
-                            id: room.host.id,
-                            name: room.host.name
-                        },
-                        guest: {
-                            id: room.guest.id,
-                            name: room.guest.name
-                        }
-                    }
+                    gameState: initialGameState, // 初期ゲーム状態を送信
+                    hostPlayerId: hostPlayerId,
+                    guestPlayerId: guestPlayerId
                 });
             }, 1000);
             break;
         case 'gameAction':
             // ゲームアクション処理
-            if (!client.roomId || !rooms[client.roomId]) {
+            const currentRoom = rooms[client.roomId];
+            if (!client.roomId || !currentRoom || !currentRoom.gameState) {
                 client.ws.send(JSON.stringify({
                     type: 'error',
                     message: 'Not in a valid room'
@@ -222,11 +365,26 @@ function handleClientMessage(clientId, data) {
             if (targetId) {
                 const targetClient = clients[targetId];
                 if (targetClient && targetClient.ws) {
-                    targetClient.ws.send(JSON.stringify({
-                        type: 'opponentAction',
-                        action: data.action,
-                        data: data.data
-                    }));
+                    // gameState を更新するロジックをここに追加
+                    // 例: data.action に応じて currentRoom.gameState を変更
+                    // この例では、単純に相手にアクションを転送するだけでなく、
+                    // サーバーで状態を更新し、更新後の gameState をブロードキャストする
+                    // TODO: data.action と data.data に基づいて gameState を更新する
+                    // 例: カードプレイ、攻撃、ターン終了など
+                    // if (data.action === 'playCard') {
+                    //   // gameState.players の手札やフィールドを更新
+                    // } else if (data.action === 'endTurn') {
+                    //   // gameState.currentTurnPlayerId を更新
+                    // }
+                    // currentRoom.gameState.gameLog.push(`${client.name} performed ${data.action}`);
+                    // 更新されたゲーム状態を部屋の全員にブロードキャスト
+                    broadcastToRoom(client.roomId, {
+                        type: 'gameStateUpdate', // 新しいメッセージタイプ
+                        gameState: currentRoom.gameState,
+                        actionOriginClientId: clientId, // どのアクションによる更新か
+                        originalAction: data.action,
+                        originalData: data.data
+                    });
                 }
             }
             break;
