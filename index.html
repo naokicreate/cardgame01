@@ -161,6 +161,76 @@
 
     <div class="container mx-auto max-w-6xl">
         <h1 class="text-3xl font-bold text-center mb-6 text-gray-700">カードゲームバトル</h1>
+        
+        <!-- マルチプレイ開始ボタン -->
+        <div class="text-center mb-4">
+            <button id="multiplayerButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                マルチプレイ
+            </button>
+        </div>
+
+        <!-- マルチプレイモーダル -->
+        <div id="multiplayerModal" class="modal-overlay">
+            <div class="modal-content w-full max-w-md">
+                <h2 class="text-xl font-bold mb-4">マルチプレイヤー設定</h2>
+                
+                <!-- プレイヤー名設定 -->
+                <div class="mb-4">
+                    <label for="playerNameInput" class="block mb-2 text-sm font-medium">プレイヤー名:</label>
+                    <input type="text" id="playerNameInput" class="w-full p-2 border rounded" placeholder="名前を入力してください">
+                </div>
+
+                <!-- サーバーURL設定 -->
+                <div class="mb-4">
+                    <label for="serverUrlInput" class="block mb-2 text-sm font-medium">サーバーURL:</label>
+                    <input type="text" id="serverUrlInput" class="w-full p-2 border rounded" value="ws://localhost:3000" placeholder="ws://localhost:3000">
+                </div>
+                
+                <!-- 接続状態 -->
+                <div id="connectionStatus" class="mb-4 text-sm text-gray-600">未接続</div>
+                
+                <div class="flex space-x-4 mb-4">
+                    <!-- 接続ボタン -->
+                    <button id="connectButton" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex-1">
+                        サーバーに接続
+                    </button>
+                    
+                    <!-- 切断ボタン -->
+                    <button id="disconnectButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex-1" disabled>
+                        切断
+                    </button>
+                </div>
+                
+                <div class="border-t border-gray-200 my-4 pt-4">
+                    <!-- 部屋作成 -->
+                    <div class="mb-4">
+                        <label for="roomNameInput" class="block mb-2 text-sm font-medium">部屋名:</label>
+                        <input type="text" id="roomNameInput" class="w-full p-2 border rounded" placeholder="部屋名を入力">
+                        <button id="createRoomButton" class="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full" disabled>
+                            部屋を作成
+                        </button>
+                    </div>
+                    
+                    <!-- 部屋一覧 -->
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-lg font-medium">部屋一覧</h3>
+                            <button id="refreshRoomsButton" class="text-sm bg-gray-200 hover:bg-gray-300 py-1 px-2 rounded" disabled>
+                                更新
+                            </button>
+                        </div>
+                        <div id="roomsList" class="border rounded p-2 max-h-40 overflow-y-auto bg-gray-50">
+                            <div class="text-sm text-gray-500 italic">サーバーに接続してください</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button id="closeMultiplayerModal" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded w-full mt-4">
+                    閉じる
+                </button>
+            </div>
+        </div>
+
         <div id="player2-area" class="player-area mb-4">
             <div class="flex justify-between items-center mb-2">
                 <h2 id="player2-name" class="text-xl font-semibold text-gray-600">プレイヤー2</h2>
@@ -233,7 +303,62 @@
             <button id="noBlockButton" class="cancel-button">ブロックしない</button>
         </div>
     </div>
-    
+
+    <!-- マルチプレイ関連のモーダル -->
+    <div id="multiplayerModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2 class="text-xl font-bold mb-4">マルチプレイ</h2>
+            
+            <!-- プレイヤー名設定 -->
+            <div class="mb-4">
+                <label for="playerNameInput" class="block text-sm font-medium mb-1">プレイヤー名：</label>
+                <div class="flex">
+                    <input type="text" id="playerNameInput" class="border rounded p-2 flex-grow mr-2" placeholder="名前を入力">
+                    <button id="setPlayerNameButton" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">設定</button>
+                </div>
+            </div>
+            
+            <!-- メインメニュー -->
+            <div id="multiplayerMenu" class="flex flex-col gap-2">
+                <button id="createRoomButton" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">部屋を作成</button>
+                <button id="joinRoomButton" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">部屋一覧を表示</button>
+                <button id="closeMultiplayerButton" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded mt-2">閉じる</button>
+            </div>
+            
+            <!-- 部屋作成画面 -->
+            <div id="createRoomSection" class="hidden flex-col gap-2">
+                <label for="roomNameInput" class="block text-sm font-medium mb-1">部屋の名前：</label>
+                <input type="text" id="roomNameInput" class="border rounded p-2 mb-2" placeholder="部屋の名前を入力">
+                <button id="confirmCreateRoomButton" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">作成する</button>
+                <button id="backFromCreateButton" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded mt-2">戻る</button>
+            </div>
+            
+            <!-- 部屋一覧画面 -->
+            <div id="roomListSection" class="hidden flex-col">
+                <h3 class="text-lg font-semibold mb-2">部屋一覧</h3>
+                <div id="roomListContainer" class="border rounded p-2 max-h-60 overflow-y-auto mb-2">
+                    <p class="text-gray-500">読み込み中...</p>
+                </div>
+                <button id="refreshRoomListButton" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">更新</button>
+                <button id="backFromRoomListButton" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded mt-2">戻る</button>
+            </div>
+            
+            <!-- 待機画面 -->
+            <div id="waitingRoomSection" class="hidden flex-col">
+                <h3 class="text-lg font-semibold mb-2">対戦相手を待っています</h3>
+                <p>部屋名: <span id="waitingRoomName"></span></p>
+                <p class="mt-2">対戦相手が参加するのを待っています...</p>
+                <button id="cancelWaitingButton" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded mt-4">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 接続状態表示 -->
+    <div id="connectionStatus" class="fixed top-2 right-2 bg-gray-200 px-3 py-1 rounded-full text-sm hidden">
+        <span class="inline-block w-2 h-2 rounded-full mr-1 bg-gray-500" id="connectionIndicator"></span>
+        <span id="connectionText">未接続</span>
+    </div>
+
     <div id="battleLogOverlay"></div>
     <div id="messageModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 400px;">
@@ -713,8 +838,7 @@
             attackActionAreaEl.innerHTML = ''; 
             attackActionPending = false; 
             attackTargetSelected = false; 
-        }
-        function handleEndPhase() {
+        }        function handleEndPhase() {
             const player = players[currentPlayerIndex];
             if (player.hand.length > MAX_HAND_SIZE) {
                 const excessCount = player.hand.length - MAX_HAND_SIZE;
@@ -725,12 +849,24 @@
             logMessage(`ターン終了。次は ${players[currentPlayerIndex].name} のターンです。`);
             changePhase("start");
         }
-        function updateActionButtons() {
+        
+        // ターン終了処理関数
+        function endTurn() {
+            // 既存のハンドラーを利用して実装
+            changePhase("end");
+        }        function updateActionButtons() {
             actionButtonsEl.innerHTML = '';
             if (gamePhase === "gameOver") {
                 const restartButton = document.createElement('button'); restartButton.textContent = "ゲームを再開する"; restartButton.classList.add('action-button', 'bg-blue-500', 'hover:bg-blue-700', 'text-white');
                 restartButton.onclick = () => { gameLogEl.innerHTML = ''; initGame(); }; actionButtonsEl.appendChild(restartButton); return;
             }
+            
+            // マルチプレイヤーモードかつ自分のターンではない場合はボタンを表示しない
+            if (isMultiplayerMode && players[currentPlayerIndex].id !== "player1") {
+                actionButtonsEl.innerHTML = `<p class="text-yellow-600 font-semibold">${players[currentPlayerIndex].name} のターン中です。自分のターンになるまでお待ちください。</p>`;
+                return;
+            }
+            
             if (gamePhase === "block_declare" || attackActionPending || attackTargetSelected) { 
                 if (gamePhase === "block_declare") actionButtonsEl.innerHTML = `<p class="text-cyan-600 font-semibold">${players[(currentPlayerIndex + 1) % players.length].name} がブロックを選択中です...</p>`;
                 return;
@@ -744,15 +880,39 @@
                     const toEndButtonFromAttack = document.createElement('button'); toEndButtonFromAttack.textContent = "攻撃終了 (メインへ)"; toEndButtonFromAttack.classList.add('action-button', 'bg-blue-500', 'hover:bg-blue-700', 'text-white'); toEndButtonFromAttack.onclick = () => { logMessage("攻撃フェイズを終了し、メインフェイズに戻ります。"); resetBlockSelectionState(); changePhase("main"); }; actionButtonsEl.appendChild(toEndButtonFromAttack);
                     const directToEndButton = document.createElement('button'); directToEndButton.textContent = "ターン終了"; directToEndButton.classList.add('action-button', 'bg-gray-500', 'hover:bg-gray-700', 'text-white'); directToEndButton.onclick = () => { resetBlockSelectionState(); changePhase("end");}; actionButtonsEl.appendChild(directToEndButton); break;
             }
-        }
-        function handleCardClick(card, ownerPlayerId, location) {
+        }        function handleCardClick(card, ownerPlayerId, location) {
             showCardDetail(card, ownerPlayerId);
             const player = players.find(p => p.id === ownerPlayerId); 
             if (!player) return;
-        }
-        function actuallyPlayCard(cardToPlay, PId) {
+            
+            // マルチプレイヤーモードでは、自分のターンかどうかをチェック
+            if (isMultiplayerMode) {
+                const currentPlayer = players[currentPlayerIndex];
+                
+                // 自分のターン以外でカード操作を制限（ブロック選択時は除く）
+                if (gamePhase !== "block_declare" && currentPlayer.id !== "player1") {
+                    logMessage("相手のターン中は操作できません", true);
+                    return;
+                }
+                
+                // ブロック選択時は、ブロッカー側のプレイヤーのみ操作可能
+                if (gamePhase === "block_declare" && player.id !== (players[(currentPlayerIndex + 1) % players.length]).id) {
+                    // ブロック選択中は、ブロッカーとなるプレイヤーだけが操作可能
+                    if (player.id === "player1") {
+                        logMessage("現在はブロック選択中です。ブロッカーとなるユニットを選択してください", true);
+                    }
+                    return;
+                }
+            }
+        }        function actuallyPlayCard(cardToPlay, PId) {
             const player = players.find(p => p.id === PId); 
             if (!player || !cardToPlay) return;
+            
+            // マルチプレイヤーモードでは自分のターン以外でカードをプレイできない
+            if (isMultiplayerMode && players[currentPlayerIndex].id !== "player1") {
+                logMessage("相手のターン中はカードをプレイできません", true);
+                return;
+            }
             
             const cardIndexInHand = player.hand.findIndex(c => c.uuid === cardToPlay.uuid);
             if (cardIndexInHand === -1) { 
@@ -1121,7 +1281,348 @@
             return false;
         }
         
-        document.addEventListener('DOMContentLoaded', () => { initGame(); });
+        // マルチプレイヤー関連の変数
+        let ws = null;
+        let clientId = null;
+        let isMultiplayerMode = false;
+        let isHost = false;
+        let currentRoomId = null;
+        
+        // マルチプレイヤーモーダル要素
+        const multiplayerButton = document.getElementById('multiplayerButton');
+        const multiplayerModal = document.getElementById('multiplayerModal');
+        const playerNameInput = document.getElementById('playerNameInput');
+        const serverUrlInput = document.getElementById('serverUrlInput');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const roomNameInput = document.getElementById('roomNameInput');
+        const createRoomButton = document.getElementById('createRoomButton');
+        const refreshRoomsButton = document.getElementById('refreshRoomsButton');
+        const roomsList = document.getElementById('roomsList');
+        const closeMultiplayerModal = document.getElementById('closeMultiplayerModal');
+        
+        // マルチプレイヤーモーダル表示
+        multiplayerButton.addEventListener('click', () => {
+            multiplayerModal.style.display = 'flex';
+        });
+        
+        // マルチプレイヤーモーダル閉じる
+        closeMultiplayerModal.addEventListener('click', () => {
+            multiplayerModal.style.display = 'none';
+        });
+          // サーバーに接続
+        connectButton.addEventListener('click', () => {
+            const playerName = playerNameInput.value.trim() || `Player_${Math.floor(Math.random() * 1000)}`;
+            let serverUrl = serverUrlInput.value.trim();
+            
+            if (!serverUrl) {
+                alert('サーバーURLを入力してください');
+                return;
+            }
+            
+            // URLの形式を確認
+            if (!serverUrl.startsWith('ws://') && !serverUrl.startsWith('wss://')) {
+                serverUrl = `ws://${serverUrl}`;
+                serverUrlInput.value = serverUrl;
+            }
+            
+            connectionStatus.textContent = '接続中...';
+            console.log(`WebSocket接続中: ${serverUrl}`);
+            
+            try {
+                ws = new WebSocket(serverUrl);
+                ws.onopen = () => {
+                    connectionStatus.textContent = '接続しました';
+                    connectButton.disabled = true;
+                    disconnectButton.disabled = false;
+                    createRoomButton.disabled = false;
+                    refreshRoomsButton.disabled = false;
+                    
+                    // 名前設定メッセージ送信
+                    ws.send(JSON.stringify({
+                        type: 'setName',
+                        name: playerName
+                    }));
+                    
+                    // 部屋一覧取得
+                    refreshRoomsList();
+                };
+                
+                ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    handleServerMessage(message);
+                };
+                  ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    connectionStatus.textContent = `エラー: 接続に失敗しました。サーバーが実行中か確認してください。`;
+                    alert(`WebSocket接続エラー: サーバー(${serverUrl})に接続できませんでした。サーバーが起動しているか確認してください。`);
+                };
+                
+                ws.onclose = () => {
+                    connectionStatus.textContent = '切断されました';
+                    connectButton.disabled = false;
+                    disconnectButton.disabled = true;
+                    createRoomButton.disabled = true;
+                    refreshRoomsButton.disabled = true;
+                    ws = null;
+                };
+                
+            } catch (error) {
+                console.error('Connection error:', error);
+                connectionStatus.textContent = 'エラー: 接続に失敗しました';
+            }
+        });
+        
+        // サーバーから切断
+        disconnectButton.addEventListener('click', () => {
+            if (ws) {
+                ws.close();
+            }
+        });
+        
+        // 部屋作成
+        createRoomButton.addEventListener('click', () => {
+            if (!ws) {
+                alert('サーバーに接続されていません');
+                return;
+            }
+            
+            const roomName = roomNameInput.value.trim() || `Room_${Math.floor(Math.random() * 1000)}`;
+            
+            ws.send(JSON.stringify({
+                type: 'createRoom',
+                roomName: roomName
+            }));
+        });
+        
+        // 部屋一覧更新
+        refreshRoomsButton.addEventListener('click', refreshRoomsList);        function refreshRoomsList() {
+            if (!ws) return;
+            
+            // サーバーURLからホスト部分を抽出
+            const serverHost = serverUrlInput.value.replace('ws://', '');
+            console.log(`部屋一覧を取得: http://${serverHost}/api/rooms`);
+            
+            // APIで部屋一覧取得
+            fetch(`http://${serverHost}/api/rooms`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(rooms => {
+                    roomsList.innerHTML = '';
+                    
+                    if (rooms.length === 0) {
+                        roomsList.innerHTML = '<div class="text-sm text-gray-500 italic">利用可能な部屋はありません</div>';
+                        return;
+                    }
+                    
+                    rooms.forEach(room => {
+                        const roomElement = document.createElement('div');
+                        roomElement.className = 'p-2 border-b hover:bg-gray-100 cursor-pointer';
+                        roomElement.innerHTML = `
+                            <div class="font-medium">${room.name}</div>
+                            <div class="text-sm text-gray-600">ホスト: ${room.hostName}</div>
+                        `;                        
+                        roomElement.addEventListener('click', () => {
+                            ws.send(JSON.stringify({
+                                type: 'joinRoom',
+                                roomId: room.id
+                            }));
+                            console.log(`部屋に参加リクエスト送信: ${room.name} (ID: ${room.id})`);
+                            connectionStatus.textContent = `「${room.name}」に参加リクエスト送信中...`;
+                        });
+                        roomsList.appendChild(roomElement);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching rooms:', error);
+                    roomsList.innerHTML = '<div class="text-sm text-red-500">部屋一覧の取得に失敗しました：' + error.message + '</div>';
+                });
+        }
+          // サーバーからのメッセージ処理
+        function handleServerMessage(message) {
+            console.log('Received message:', message);
+            
+            switch (message.type) {
+                case 'connected':
+                    clientId = message.clientId;
+                    console.log(`サーバーに接続しました。クライアントID: ${clientId}`);
+                    break;
+                    
+                case 'nameUpdated':
+                    // 名前が更新された
+                    playerNameInput.value = message.name;
+                    console.log(`プレイヤー名を設定: ${message.name}`);
+                    break;
+                    
+                case 'roomCreated':
+                    // 部屋が作成された
+                    currentRoomId = message.roomId;
+                    isHost = true;
+                    connectionStatus.textContent = `部屋「${message.roomName}」を作成しました（参加者を待っています）`;
+                    console.log(`部屋を作成: ${message.roomName} (ID: ${message.roomId})`);
+                    break;
+                    
+                case 'joinedRoom':
+                    // 部屋に参加した
+                    currentRoomId = message.room.id;
+                    isHost = false;
+                    connectionStatus.textContent = `部屋「${message.room.name}」に参加しました`;
+                    console.log(`部屋に参加: ${message.room.name} (ID: ${message.room.id})`);
+                    break;
+                    
+                case 'playerJoined':
+                    // 他のプレイヤーが部屋に参加した
+                    connectionStatus.textContent = `プレイヤー「${message.player.name}」が参加しました`;
+                    console.log(`プレイヤーが参加: ${message.player.name} (ID: ${message.player.id})`);
+                    break;
+                      case 'gameStart':
+                    // ゲーム開始
+                    multiplayerModal.style.display = 'none';
+                    isMultiplayerMode = true;
+                    console.log('ゲーム開始:', message.players);
+                    startMultiplayerGame(message.players);
+                    break;
+                    
+                case 'opponentAction':
+                    // 相手のアクション
+                    if (isMultiplayerMode) {
+                        console.log('相手のアクション:', message.action, message.data);
+                        handleOpponentAction(message.action, message.data);
+                    } else {
+                        console.warn('マルチプレイヤーモードが有効でないのに相手のアクションを受信しました');
+                    }
+                    break;
+                    
+                case 'error':
+                    // エラーメッセージ
+                    console.error('サーバーからのエラー:', message.message);
+                    alert(`エラー: ${message.message}`);
+                    break;
+                      case 'roomClosed':
+                    // 部屋が閉じられた
+                    console.log('部屋が閉じられました:', message.message);
+                    alert('部屋が閉じられました: ' + message.message);
+                    currentRoomId = null;
+                    isHost = false;
+                    isMultiplayerMode = false;
+                    break;
+                    
+                case 'playerLeft':
+                    // プレイヤーが退出した
+                    console.log('プレイヤーが退出:', message.message);
+                    alert('プレイヤーが退出しました: ' + message.message);
+                    break;
+                    
+                default:
+                    // 未知のメッセージタイプ
+                    console.warn('未知のメッセージタイプ:', message);
+                    break;
+            }
+        }
+        
+        // マルチプレイヤーゲーム開始
+        function startMultiplayerGame(gamePlayers) {
+            // プレイヤー名設定
+            if (isHost) {
+                players[0].name = gamePlayers.host.name;
+                players[1].name = gamePlayers.guest.name;
+            } else {
+                players[0].name = gamePlayers.guest.name;
+                players[1].name = gamePlayers.host.name;
+            }
+            
+            // AIモードを無効化
+            isAIMode = false;
+            
+            // ゲーム初期化
+            initGame();
+              // 先攻は常にホスト側から
+            // ホストがプレイヤー1、ゲストがプレイヤー2となるよう設定
+            if (isHost) {
+                currentPlayerIndex = 0;                   // ホストは自分がプレイヤー1で先攻
+                players[0].isTurnPlayer = true;
+                players[1].isTurnPlayer = false;
+                players[0].id = "player1";               // 自分は常にplayer1
+                players[1].id = "player2";
+            } else {
+                currentPlayerIndex = 1;                   // ゲストは相手がプレイヤー1で先攻
+                players[0].isTurnPlayer = false;
+                players[1].isTurnPlayer = true;
+                players[0].id = "player1";               // 自分は常にplayer1
+                players[1].id = "player2";
+            }
+            
+            // ゲーム開始アナウンス
+            logMessage('マルチプレイヤーモード: ゲームを開始します', true);
+            logMessage(`${players[0].name} vs ${players[1].name}`, true);
+            logMessage(`${players[currentPlayerIndex].name} の番です`, true);
+            
+            updateAllUI();
+            showMessage('対戦相手が見つかりました！');
+        }
+        
+        // サーバーにゲームアクションを送信
+        function sendGameAction(action, data) {
+            if (!ws || !isMultiplayerMode) return;
+            
+            ws.send(JSON.stringify({
+                type: 'gameAction',
+                action: action,
+                data: data
+            }));
+        }
+          // 相手のアクション処理
+        function handleOpponentAction(action, data) {
+            console.log('Opponent action:', action, data);
+            
+            switch (action) {
+                case 'endTurn':
+                    // 相手のターン終了
+                    logMessage("相手がターンを終了しました。あなたのターンが始まります。", true);
+                    endTurn();
+                    // 表示を更新
+                    updateAllUI();
+                    break;
+                    
+                case 'playCard':
+                    // 相手がカードをプレイした
+                    logMessage(`相手が ${data.cardName} をプレイしました`, true);
+                    // ここでゲーム状態を更新する処理を追加
+                    break;
+                    
+                case 'attack':
+                    // 相手が攻撃
+                    logMessage(`相手が ${data.attackerName} で攻撃しました`, true);
+                    break;
+                    
+                default:
+                    console.log(`未実装のアクション: ${action}`);
+                    break;
+            }
+        }
+          // ターン終了時に追加の処理（マルチプレイヤー用）
+        const originalEndTurn = endTurn;
+        endTurn = function() {
+            originalEndTurn();
+            
+            if (isMultiplayerMode) {
+                console.log('マルチプレイヤーモード: ターン終了を通知');
+                // 相手にターン終了を通知
+                sendGameAction('endTurn', {});
+            }
+        };
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initGame();
+            
+            // プレイヤー名の初期値を設定
+            playerNameInput.value = `Player_${Math.floor(Math.random() * 1000)}`;
+        });
     </script>
 </body>
 </html>
