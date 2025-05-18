@@ -47,7 +47,10 @@
         }
         .unit-card.can-attack { border: 2px solid limegreen; }
         .unit-card.has-attacked { border: 2px solid orange; }
-        .unit-card.selected-card { outline: 3px solid dodgerblue !important; box-shadow: 0 0 10px dodgerblue; }
+        .unit-card.selected-for-action { /* General selection highlight */
+            outline: 3px solid dodgerblue !important;
+            box-shadow: 0 0 10px dodgerblue;
+        }
         .unit-card.blocker-candidate { outline: 3px solid cyan !important; }
 
 
@@ -72,7 +75,7 @@
             border-radius: 8px; background-color: #f9f9f9;
         }
         .player-area.active-player { border-color: gold; box-shadow: 0 0 10px gold; }
-        .player-area.blocking-player { border-color: cyan; box-shadow: 0 0 10px cyan; } /* Highlight for blocking player */
+        .player-area.blocking-player { border-color: cyan; box-shadow: 0 0 10px cyan; }
         .log-area {
             height: 150px; border: 1px solid #ccc; overflow-y: scroll;
             padding: 10px; margin-top: 20px; background-color: #f0f0f0;
@@ -92,7 +95,6 @@
         .trap-card-set::before { content: "SET TRAP"; color: white; font-weight: bold; font-size: 0.9rem; }
         .trap-card-set .card-cost { display: none; }
 
-        /* Modal Base */
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0,0,0,0.6); justify-content: center; align-items: center;
@@ -134,7 +136,6 @@
         }
         .cancel-button:hover { background-color: #5a6268; }
 
-        /* Block Selection Modal */
         #blockSelectModalContent { width: 500px; text-align: center; }
         #blockInfo { margin-bottom: 15px; }
         #blockerSelectionArea { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 15px; min-height: 100px;}
@@ -181,7 +182,7 @@
             <p class="text-lg font-semibold">現在のターン: <span id="current-turn-player" class="text-blue-600">プレイヤー1</span></p>
             <p class="text-lg">フェーズ: <span id="current-phase" class="text-green-600">ゲーム準備中</span> (<span id="sub-phase" class="text-orange-500"></span>)</p>
             <div id="action-buttons" class="mt-2"></div>
-        </div>
+            <div id="attack-action-area" class="mt-2"></div> </div>
 
         <div id="player1-area" class="player-area mt-4">
              <div class="flex justify-between items-center mb-2">
@@ -242,13 +243,10 @@
     </div>
 
     <script>
-        // --- 定数, カード定義, グローバル変数 (変更点はコメントで示す) ---
-        const MAX_HAND_SIZE = 7; const INITIAL_LP = 10000; const INITIAL_CORE = 5; const MAX_CORE = 10;
+        const MAX_HAND_SIZE = 7; const INITIAL_LP = 10000; const INITIAL_CORE = 5; const MAX_CORE = 10; const MAX_RECOVERY_CORE = 8;
         const CORE_PER_TURN = 3; const DECK_OUT_DAMAGE = 1000; const MAX_UNITS_ON_FIELD = 5;
         const CARD_PLACEHOLDER_IMAGE_URL = "https://placehold.co/130x180/e0e0e0/777?text=IMG";
         const GEM_EMOJI = '💎';
-
-        // Removed the duplicate cardPool declaration here. The full one below is kept.
 
         const cardPool = [
             { id: "unit001", name: "ゴブリン", type: "unit", cost: 1, attack: 500, health: 600, effects: [], description: "か弱いモンスター。だが、侮ると痛い目を見るかもしれない。集団で襲い掛かることを得意とする。", illust_url: "https://placehold.co/100x70/a9a9a9/ffffff?text=Goblin" },
@@ -265,27 +263,24 @@
             { id: "resource002", name: "知識の泉", type: "resource", cost: 4, effects: [{ type: "continuous", phase: "draw", action: "draw", value: 1 }], description: "自分のドローフェイズ時、追加でカードを1枚引く。叡智は勝利への鍵となる。", illust_url: "https://placehold.co/100x70/00ffff/000000?text=WisdomWell" },
         ];
 
-
         let players = [];
         let currentPlayerIndex = 0;
         let turnCount = 0;
-        let gamePhase = "setup"; // setup, start, draw, main, attack, block_declare, end
-        let subPhaseEl = document.getElementById('sub-phase'); // サブフェーズ表示用
-        let selectedPlayerCardUUID = null;
-        let selectedOwnerPlayerId = null;
-        let attackTargetSelected = false;
+        let gamePhase = "setup";
+        let subPhaseEl = document.getElementById('sub-phase');
+        let selectedPlayerCardUUID = null; 
+        let selectedOwnerPlayerId = null;  
+        let attackActionPending = false; 
+        let attackTargetSelected = false; 
         let effectTargetSelected = false;
         let currentEffectAction = null;
         let cardToSummon = null;
         let summonerPlayerId = null;
-        // --- ブロック選択関連のグローバル変数 ---
-        let currentAttackerInfo = null; // { unit: attackingUnit, owner: attackerPlayer }
-        let currentAttackTargetInfo = null; // { target: targetEntity, ownerId: targetOwnerId, type: targetType }
+        let currentAttackerInfo = null;
+        let currentAttackTargetInfo = null;
         let selectedBlockerUUID = null;
 
-
-        // --- DOM要素 (変更点はコメントで示す) ---
-        const player1NameEl = document.getElementById('player1-name'); /* ... (他DOM要素も同様) */
+        const player1NameEl = document.getElementById('player1-name');
         const player1LpEl = document.getElementById('player1-lp');
         const player1CoreEl = document.getElementById('player1-core');
         const player1HandEl = document.getElementById('player1-hand');
@@ -308,6 +303,7 @@
         const currentTurnPlayerEl = document.getElementById('current-turn-player');
         const currentPhaseEl = document.getElementById('current-phase');
         const actionButtonsEl = document.getElementById('action-buttons');
+        const attackActionAreaEl = document.getElementById('attack-action-area'); 
         const gameLogEl = document.getElementById('game-log');
         const messageModal = document.getElementById('messageModal');
         const modalMessageText = document.getElementById('modalMessageText');
@@ -319,15 +315,12 @@
         const confirmSummonButton = document.getElementById('confirmSummonButton');
         const cancelSummonButton = document.getElementById('cancelSummonButton');
         const battleLogOverlay = document.getElementById('battleLogOverlay');
-        // --- ブロック選択モーダルのDOM要素 ---
         const blockSelectModal = document.getElementById('blockSelectModal');
         const blockInfoEl = document.getElementById('blockInfo');
         const blockerSelectionAreaEl = document.getElementById('blockerSelectionArea');
         const confirmBlockButton = document.getElementById('confirmBlockButton');
         const noBlockButton = document.getElementById('noBlockButton');
 
-
-        // --- Event Listeners for Modals (ブロック選択モーダル関連を追加) ---
         modalCloseButton.onclick = () => { messageModal.style.display = "none"; };
         cancelSummonButton.onclick = () => { summonConfirmModal.style.display = "none"; cardToSummon = null; summonerPlayerId = null; };
         confirmSummonButton.onclick = () => {
@@ -339,236 +332,205 @@
                 if (event.target === modal) {
                     modal.style.display = "none";
                     if (modal === summonConfirmModal) { cardToSummon = null; summonerPlayerId = null; }
-                    if (modal === blockSelectModal) { /* resetBlockSelectionState(); */ } // 必要ならリセット処理
+                    if (modal === blockSelectModal) { resetBlockSelectionState(); changePhase("attack");}
                 }
             };
         });
         confirmBlockButton.onclick = () => {
             if (currentAttackerInfo && currentAttackTargetInfo && selectedBlockerUUID) {
-                const defenderPlayer = players.find(p => p.id === currentAttackTargetInfo.ownerId || (currentAttackTargetInfo.type === 'player' && p.id === currentAttackTargetInfo.target.id)); // 防御側プレイヤー
+                const defenderPlayer = players.find(p => p.id === currentAttackTargetInfo.ownerId || (currentAttackTargetInfo.type === 'player' && p.id === currentAttackTargetInfo.target.id));
                 const blockerUnit = defenderPlayer.fieldUnits.find(u => u.uuid === selectedBlockerUUID);
                 if (blockerUnit) {
                     logMessage(`${defenderPlayer.name} の ${blockerUnit.name} がブロック！`, true);
                     resolveCombat(currentAttackerInfo.unit, currentAttackerInfo.owner, currentAttackTargetInfo.target, defenderPlayer, blockerUnit);
+                } else { 
+                     logMessage("ブロックエラー：選択されたブロッカーが見つかりません。ブロックなしとして処理します。", true);
+                     resolveCombat(currentAttackerInfo.unit, currentAttackerInfo.owner, currentAttackTargetInfo.target, defenderPlayer, null);
                 }
+            } else if (currentAttackerInfo && currentAttackTargetInfo) { 
+                 logMessage("ブロックしませんでした。", true);
+                 const defenderPlayer = players.find(p => p.id === currentAttackTargetInfo.ownerId || (currentAttackTargetInfo.type === 'player' && p.id === currentAttackTargetInfo.target.id));
+                 resolveCombat(currentAttackerInfo.unit, currentAttackerInfo.owner, currentAttackTargetInfo.target, defenderPlayer, null);
             }
             blockSelectModal.style.display = "none";
             resetBlockSelectionState();
-            changePhase("attack"); // 攻撃フェイズの次のアクションへ (またはメインフェイズに戻る)
+            changePhase("attack");
         };
         noBlockButton.onclick = () => {
             logMessage("ブロックしませんでした。", true);
             if (currentAttackerInfo && currentAttackTargetInfo) {
-                resolveCombat(currentAttackerInfo.unit, currentAttackerInfo.owner, currentAttackTargetInfo.target, players.find(p=>p.id === currentAttackTargetInfo.ownerId || (currentAttackTargetInfo.type === 'player' && p.id === currentAttackTargetInfo.target.id) ), null); // ブロッカーなし
+                const defenderPlayer = players.find(p => p.id === currentAttackTargetInfo.ownerId || (currentAttackTargetInfo.type === 'player' && p.id === currentAttackTargetInfo.target.id));
+                resolveCombat(currentAttackerInfo.unit, currentAttackerInfo.owner, currentAttackTargetInfo.target, defenderPlayer, null);
             }
             blockSelectModal.style.display = "none";
             resetBlockSelectionState();
             changePhase("attack");
         };
 
-
-        // --- Helper Functions (showCardDetail, logMessage, showBattleLogOverlayなど前回と同じものは省略) ---
-        function showMessage(message) { /* ... */ }
-        function logMessage(message, isBattleLog = false) { /* ... */ }
-        function generateUUID() { /* ... */ }
-        function createCardInstance(cardData) { /* ... */ }
-        function showBattleLogOverlay(message) { /* ... */ }
-        function showCardDetail(cardData, ownerId) { /* ... */ }
-        // (showMessage, logMessage, generateUUID, createCardInstance, showBattleLogOverlay, showCardDetail は前回と同じ)
-        function showMessage(message) {
-            modalMessageText.textContent = message;
-            messageModal.style.display = "flex";
-        }
+        function showMessage(message) { modalMessageText.textContent = message; messageModal.style.display = "flex"; }
         function logMessage(message, isBattleLog = false) {
-            const p = document.createElement('p');
-            p.textContent = message;
-            gameLogEl.appendChild(p);
+            const p = document.createElement('p'); p.textContent = message; gameLogEl.appendChild(p);
             gameLogEl.scrollTop = gameLogEl.scrollHeight;
-            if (isBattleLog) {
-                showBattleLogOverlay(message);
-            }
+            if (isBattleLog) showBattleLogOverlay(message);
         }
-        function generateUUID() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        }
+        function generateUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }
         function createCardInstance(cardData) {
-            const instance = JSON.parse(JSON.stringify(cardData));
-            instance.uuid = generateUUID();
-            if (instance.type === "unit") {
-                instance.currentHealth = instance.health;
-                instance.canAttack = false;
-                instance.hasAttackedThisTurn = false;
-                instance.isResting = false;
-            }
-            instance.isSet = false;
-            return instance;
+            const instance = JSON.parse(JSON.stringify(cardData)); instance.uuid = generateUUID();
+            if (instance.type === "unit") { instance.currentHealth = instance.health; instance.canAttack = false; instance.hasAttackedThisTurn = false; instance.isResting = false; }
+            instance.isSet = false; return instance;
         }
         function showBattleLogOverlay(message) {
-            battleLogOverlay.textContent = message;
-            battleLogOverlay.style.display = "block";
-            setTimeout(() => {
-                battleLogOverlay.style.display = "none";
-            }, 1500);
+            battleLogOverlay.textContent = message; battleLogOverlay.style.display = "block";
+            setTimeout(() => { battleLogOverlay.style.display = "none"; }, 1500);
         }
         function showCardDetail(cardData, ownerId) {
             cardDetailModalContentEl.innerHTML = '';
-            const imgCol = document.createElement('div');
-            imgCol.classList.add('card-detail-image-column');
-            const img = document.createElement('img');
-            img.src = cardData.illust_url || CARD_PLACEHOLDER_IMAGE_URL;
-            img.alt = cardData.name;
-            imgCol.appendChild(img);
-            cardDetailModalContentEl.appendChild(imgCol);
-
-            const infoCol = document.createElement('div');
-            infoCol.classList.add('card-detail-info-column');
-            const header = document.createElement('div');
-            header.classList.add('card-detail-header');
-            const nameEl = document.createElement('div');
-            nameEl.classList.add('card-detail-name');
-            nameEl.textContent = cardData.name;
+            const imgCol = document.createElement('div'); imgCol.classList.add('card-detail-image-column');
+            const img = document.createElement('img'); img.src = cardData.illust_url || CARD_PLACEHOLDER_IMAGE_URL; img.alt = cardData.name;
+            imgCol.appendChild(img); cardDetailModalContentEl.appendChild(imgCol);
+            const infoCol = document.createElement('div'); infoCol.classList.add('card-detail-info-column');
+            const header = document.createElement('div'); header.classList.add('card-detail-header');
+            const nameEl = document.createElement('div'); nameEl.classList.add('card-detail-name'); nameEl.textContent = cardData.name;
             header.appendChild(nameEl);
-            const typeEl = document.createElement('div');
-            typeEl.classList.add('card-detail-type');
-            typeEl.textContent = cardData.type.toUpperCase();
-            header.appendChild(typeEl);
-            infoCol.appendChild(header);
-            const costEl = document.createElement('div');
-            costEl.classList.add('card-detail-cost');
+            const typeEl = document.createElement('div'); typeEl.classList.add('card-detail-type'); typeEl.textContent = cardData.type.toUpperCase();
+            header.appendChild(typeEl); infoCol.appendChild(header);
+            const costEl = document.createElement('div'); costEl.classList.add('card-detail-cost');
             costEl.innerHTML = `コスト: <span style="color: gold;">${GEM_EMOJI.repeat(cardData.cost)}</span> (${cardData.cost})`;
             infoCol.appendChild(costEl);
             if (cardData.type === "unit") {
-                const statsEl = document.createElement('div');
-                statsEl.classList.add('card-detail-stats');
+                const statsEl = document.createElement('div'); statsEl.classList.add('card-detail-stats');
                 statsEl.textContent = `攻撃力: ${cardData.attack} / 体力: ${cardData.currentHealth || cardData.health}`;
                 infoCol.appendChild(statsEl);
             }
-            const descEl = document.createElement('div');
-            descEl.classList.add('card-detail-description');
-            descEl.textContent = cardData.description;
+            const descEl = document.createElement('div'); descEl.classList.add('card-detail-description'); descEl.textContent = cardData.description;
             infoCol.appendChild(descEl);
-            const closeButton = document.createElement('button');
-            closeButton.classList.add('cancel-button');
+
+            // アクションボタンエリアを追加
+            const actionButtonsArea = document.createElement('div');
+            actionButtonsArea.classList.add('card-detail-action-buttons');
+            actionButtonsArea.style.display = 'flex';
+            actionButtonsArea.style.justifyContent = 'flex-end';
+            actionButtonsArea.style.marginTop = '15px';
+            actionButtonsArea.style.gap = '8px';
+
+            // プレイヤーの特定
+            const player = players.find(p => p.id === ownerId);
+            const isCurrentPlayer = player && player.isTurnPlayer;
+            
+            // 手札のカードで、メインフェイズの場合は召喚/プレイボタンを追加
+            if (player && isCurrentPlayer && gamePhase === "main" && player.hand.some(c => c.uuid === cardData.uuid)) {
+                const canAfford = player.core >= cardData.cost;
+                const hasSpace = cardData.type !== "unit" || player.fieldUnits.length < MAX_UNITS_ON_FIELD;
+                const hasTrap = cardData.type === "trap" && player.fieldTrap !== null;
+                const hasResource = cardData.type === "resource" && player.fieldResource !== null;
+                const canPlay = canAfford && hasSpace && !hasTrap && !hasResource;
+                
+                const playButton = document.createElement('button');
+                playButton.textContent = cardData.type === "unit" ? "召喚する" : (cardData.type === "trap" ? "セットする" : "プレイする");
+                playButton.classList.add(canPlay ? 'summon-button' : 'cancel-button');
+                playButton.disabled = !canPlay;
+                playButton.style.opacity = canPlay ? '1' : '0.7';
+                
+                if (!canPlay) {
+                    playButton.title = !canAfford ? "コアが足りません" : 
+                                      !hasSpace ? "場に空きがありません" : 
+                                      (hasTrap || hasResource) ? "既に場にカードがあります" : "プレイできません";
+                }
+                
+                playButton.onclick = () => {
+                    if (canPlay) {
+                        actuallyPlayCard(cardData, ownerId);
+                        cardDetailModalEl.style.display = "none";
+                    }
+                };
+                actionButtonsArea.appendChild(playButton);
+            }            // フィールド上のユニットで、攻撃フェイズ中なら攻撃ボタンを表示
+            if (player && isCurrentPlayer && gamePhase === "attack" && 
+                player.fieldUnits.some(u => u.uuid === cardData.uuid)) {
+                const unit = player.fieldUnits.find(u => u.uuid === cardData.uuid);
+                if (unit && unit.canAttack && !unit.hasAttackedThisTurn) {
+                    const attackButton = document.createElement('button');
+                    attackButton.textContent = "攻撃する";
+                    attackButton.classList.add('summon-button');
+                    attackButton.style.backgroundColor = '#e74c3c';
+                    attackButton.onclick = () => {
+                        selectedPlayerCardUUID = unit.uuid;
+                        selectedOwnerPlayerId = ownerId;
+                        cardDetailModalEl.style.display = "none";
+                        
+                        // 直接相手プレイヤーへの攻撃として処理
+                        const attackerPlayer = players.find(p => p.id === ownerId);
+                        const defenderPlayer = players.find(p => p.id !== ownerId);
+                        if (attackerPlayer && defenderPlayer) {
+                            currentAttackerInfo = { 
+                                unit: unit, 
+                                owner: attackerPlayer 
+                            };
+                            currentAttackTargetInfo = { 
+                                type: 'player', 
+                                target: defenderPlayer 
+                            };
+                            logMessage(`${unit.name} が ${defenderPlayer.name} に攻撃！`, true);
+                            changePhase("block_declare");
+                            promptBlockSelection(unit, defenderPlayer, defenderPlayer);
+                        }
+                    };
+                    actionButtonsArea.appendChild(attackButton);
+                }
+            }
+
+            const closeButton = document.createElement('button'); 
+            closeButton.classList.add('cancel-button'); 
             closeButton.textContent = '閉じる';
-            closeButton.style.marginTop = 'auto';
-            closeButton.style.alignSelf = 'flex-end';
-            closeButton.onclick = () => { cardDetailModalEl.style.display = "none"; };
-            infoCol.appendChild(closeButton);
+            closeButton.onclick = () => { 
+                cardDetailModalEl.style.display = "none"; 
+            };
+            actionButtonsArea.appendChild(closeButton);
+            infoCol.appendChild(actionButtonsArea);
+            
             cardDetailModalContentEl.appendChild(infoCol);
             cardDetailModalEl.style.display = "flex";
         }
-
         function resetBlockSelectionState() {
-            currentAttackerInfo = null;
-            currentAttackTargetInfo = null;
-            selectedBlockerUUID = null;
+            currentAttackerInfo = null; currentAttackTargetInfo = null; selectedBlockerUUID = null;
             document.querySelectorAll('.blocker-candidate').forEach(el => el.classList.remove('blocker-candidate'));
+            document.querySelectorAll('.card.selected-for-action').forEach(el => el.classList.remove('selected-for-action')); 
             players.forEach(p => p.playerElements.areaEl.classList.remove('blocking-player'));
             subPhaseEl.textContent = "";
+            attackActionAreaEl.innerHTML = ''; 
+            attackActionPending = false;
+            attackTargetSelected = false;
         }
         
-        function initGame() { /* ... (前回と同じ) ... */ }
-        function updateAllUI() { /* ... (コア表示以外は前回と同じ) ... */ }
-        function getPhaseNameJP(phase) { /* ... */ }
-        function createCardElement(card, ownerPlayerId, location = "hand") { /* ... (blocker-candidateクラスの処理追加) ... */ }
-        function renderHand(player) { /* ... */ }
-        function renderFieldUnits(player) { /* ... */ }
-        function renderFieldTrap(player) { /* ... */ }
-        function renderFieldResource(player) { /* ... */ }
-        function changePhase(newPhase) { /* ... (block_declareフェーズ追加) ... */ }
-        function handleStartPhase() { /* ... */ }
-        function handleDrawPhase() { /* ... */ }
-        function drawCard(player, log = true) { /* ... */ }
-        function handleMainPhase() { /* ... */ }
-        function handleAttackPhaseEntry() { /* ... */ }
-        // (initGame, updateAllUI, getPhaseNameJP, createCardElement, renderHand, renderFieldUnits, renderFieldTrap, renderFieldResource, changePhase, handleStartPhase, handleDrawPhase, drawCard, handleMainPhase, handleAttackPhaseEntry, handleEndPhase, updateActionButtons, handleCardClick, actuallyPlayCard, handleFieldUnitClick, handleOnPlayEffect, highlightTargets, highlightEffectTargets, clearHighlights, clearSelections, clearEffectSelection, checkAndDestroyUnit, applyEffect, findCardByUUID, checkWinCondition は前回と同じか微修正)
         function initGame() {
-            logMessage("ゲームを初期化しています...");
-            players = [
-                {
-                    id: "player1", name: "プレイヤー1", lp: INITIAL_LP, core: INITIAL_CORE, deck: [], hand: [],
-                    fieldUnits: [], fieldTrap: null, fieldResource: null, discardPile: [], isTurnPlayer: true,
-                    playerElements: {
-                        nameEl: player1NameEl, lpEl: player1LpEl, coreEl: player1CoreEl,
-                        handEl: player1HandEl, handCountEl: player1HandCountEl,
-                        deckCountEl: player1DeckCountEl, discardCountEl: player1DiscardCountEl,
-                        fieldUnitsEl: player1FieldUnitsEl, fieldTrapEl: player1FieldTrapEl,
-                        fieldResourceEl: player1FieldResourceEl, areaEl: document.getElementById('player1-area')
-                    }
-                },
-                {
-                    id: "player2", name: "プレイヤー2", lp: INITIAL_LP, core: INITIAL_CORE, deck: [], hand: [],
-                    fieldUnits: [], fieldTrap: null, fieldResource: null, discardPile: [], isTurnPlayer: false,
-                    playerElements: {
-                        nameEl: player2NameEl, lpEl: player2LpEl, coreEl: player2CoreEl,
-                        handEl: player2HandEl, handCountEl: player2HandCountEl,
-                        deckCountEl: player2DeckCountEl, discardCountEl: player2DiscardCountEl,
-                        fieldUnitsEl: player2FieldUnitsEl, fieldTrapEl: player2FieldTrapEl,
-                        fieldResourceEl: player2FieldResourceEl, areaEl: document.getElementById('player2-area')
-                    }
-                }
+            logMessage("ゲームを初期化しています...");            players = [
+                { id: "player1", name: "プレイヤー1", lp: INITIAL_LP, core: INITIAL_CORE, deck: [], hand: [], fieldUnits: [], fieldTrap: null, fieldResource: null, discardPile: [], isTurnPlayer: true, lastTurnCoreUsed: false, coreNotUsedTurns: 0, playerElements: { nameEl: player1NameEl, lpEl: player1LpEl, coreEl: player1CoreEl, handEl: player1HandEl, handCountEl: player1HandCountEl, deckCountEl: player1DeckCountEl, discardCountEl: player1DiscardCountEl, fieldUnitsEl: player1FieldUnitsEl, fieldTrapEl: player1FieldTrapEl, fieldResourceEl: player1FieldResourceEl, areaEl: document.getElementById('player1-area') }},
+                { id: "player2", name: "プレイヤー2", lp: INITIAL_LP, core: INITIAL_CORE, deck: [], hand: [], fieldUnits: [], fieldTrap: null, fieldResource: null, discardPile: [], isTurnPlayer: false, lastTurnCoreUsed: false, coreNotUsedTurns: 0, playerElements: { nameEl: player2NameEl, lpEl: player2LpEl, coreEl: player2CoreEl, handEl: player2HandEl, handCountEl: player2HandCountEl, deckCountEl: player2DeckCountEl, discardCountEl: player2DiscardCountEl, fieldUnitsEl: player2FieldUnitsEl, fieldTrapEl: player2FieldTrapEl, fieldResourceEl: player2FieldResourceEl, areaEl: document.getElementById('player2-area') }}
             ];
-
             function buildPlayerDeck() {
-                let deck = [];
-                const unitCards = cardPool.filter(c => c.type === 'unit');
-                const trapCards = cardPool.filter(c => c.type === 'trap');
-                const resourceCards = cardPool.filter(c => c.type === 'resource');
+                let deck = []; const unitCards = cardPool.filter(c => c.type === 'unit'); const trapCards = cardPool.filter(c => c.type === 'trap'); const resourceCards = cardPool.filter(c => c.type === 'resource');
                 for(let i=0; i<14; i++) deck.push(createCardInstance(unitCards[i % unitCards.length]));
                 for(let i=0; i<3; i++) deck.push(createCardInstance(trapCards[i % trapCards.length]));
                 for(let i=0; i<3; i++) deck.push(createCardInstance(resourceCards[i % resourceCards.length]));
-                for (let i = deck.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [deck[i], deck[j]] = [deck[j], deck[i]];
-                }
+                for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
                 return deck;
             }
-
-            players.forEach(player => {
-                player.deck = buildPlayerDeck();
-                for (let i = 0; i < 3; i++) {
-                    drawCard(player, false);
-                }
-            });
-
-            currentPlayerIndex = 0;
-            players[0].isTurnPlayer = true;
-            players[1].isTurnPlayer = false;
-            turnCount = 1;
-            
-            resetBlockSelectionState(); // 初期化時にも呼ぶ
-            clearSelections();
-            clearEffectSelection();
-            updateAllUI();
+            players.forEach(player => { player.deck = buildPlayerDeck(); for (let i = 0; i < 3; i++) drawCard(player, false); });
+            currentPlayerIndex = 0; players[0].isTurnPlayer = true; players[1].isTurnPlayer = false; turnCount = 1;
+            resetBlockSelectionState(); clearSelections(); clearEffectSelection(); updateAllUI();
             logMessage(`${players[currentPlayerIndex].name} のターンでゲーム開始！`);
             changePhase("start");
         }
 
         function updateAllUI() {
             players.forEach(player => {
-                player.playerElements.nameEl.textContent = player.name;
-                player.playerElements.lpEl.textContent = player.lp;
+                player.playerElements.nameEl.textContent = player.name; player.playerElements.lpEl.textContent = player.lp;
                 player.playerElements.coreEl.innerHTML = '';
-                for (let i = 0; i < player.core; i++) {
-                    const gemSpan = document.createElement('span');
-                    gemSpan.textContent = GEM_EMOJI;
-                    player.playerElements.coreEl.appendChild(gemSpan);
-                }
-                if (player.core === 0) {
-                     player.playerElements.coreEl.textContent = '0';
-                }
-                player.playerElements.handCountEl.textContent = player.hand.length;
-                player.playerElements.deckCountEl.textContent = player.deck.length;
-                player.playerElements.discardCountEl.textContent = player.discardPile.length;
-                renderHand(player);
-                renderFieldUnits(player);
-                renderFieldTrap(player);
-                renderFieldResource(player);
-
-                player.playerElements.areaEl.classList.remove('blocking-player'); // Reset blocking highlight
+                for (let i = 0; i < player.core; i++) { const gemSpan = document.createElement('span'); gemSpan.textContent = GEM_EMOJI; player.playerElements.coreEl.appendChild(gemSpan); }
+                if (player.core === 0) player.playerElements.coreEl.textContent = '0';
+                player.playerElements.handCountEl.textContent = player.hand.length; player.playerElements.deckCountEl.textContent = player.deck.length; player.playerElements.discardCountEl.textContent = player.discardPile.length;
+                renderHand(player); renderFieldUnits(player); renderFieldTrap(player); renderFieldResource(player);
+                player.playerElements.areaEl.classList.remove('blocking-player');
                 if (gamePhase === "block_declare" && player.id === (players[(currentPlayerIndex + 1) % players.length]).id) {
                      player.playerElements.areaEl.classList.add('blocking-player');
                 } else if (player.isTurnPlayer) {
@@ -577,404 +539,297 @@
                     player.playerElements.areaEl.classList.remove('active-player');
                 }
             });
-
-            currentTurnPlayerEl.textContent = players[currentPlayerIndex].name;
-            currentPhaseEl.textContent = getPhaseNameJP(gamePhase);
-            subPhaseEl.textContent = gamePhase === "block_declare" ? "ブロック宣言" : "";
+            currentTurnPlayerEl.textContent = players[currentPlayerIndex].name; currentPhaseEl.textContent = getPhaseNameJP(gamePhase);
+            subPhaseEl.textContent = gamePhase === "block_declare" ? "ブロック宣言" : (attackActionPending ? "攻撃準備" : (attackTargetSelected ? "攻撃対象選択" : ""));
             updateActionButtons();
 
-            if (attackTargetSelected && selectedPlayerCardUUID) {
+            if (attackTargetSelected && selectedPlayerCardUUID) { 
                 const player = players.find(p => p.id === selectedOwnerPlayerId);
                 if (player) {
                     const opponent = players.find(p => p.id !== player.id);
                     const attackerUnit = player.fieldUnits.find(u => u.uuid === selectedPlayerCardUUID);
-                    if (attackerUnit && opponent) {
-                        highlightTargets(player, opponent, attackerUnit);
-                    }
-                }
-            } else if (effectTargetSelected && currentEffectAction) {
-                const player = currentEffectAction.sourcePlayer;
-                const opponent = players.find(p => p.id !== player.id);
-                if (player && opponent) {
-                    highlightEffectTargets(player, opponent, currentEffectAction.target);
+                    if (attackerUnit && opponent) highlightTargets(player, opponent, attackerUnit);
                 }
             }
         }
 
         function getPhaseNameJP(phase) {
             switch(phase) {
-                case "setup": return "ゲーム準備中";
-                case "start": return "スタートフェイズ";
-                case "draw": return "ドローフェイズ";
-                case "main": return "メインフェイズ";
-                case "attack": return "攻撃フェイズ";
-                case "block_declare": return "攻撃フェイズ"; // メインフェーズは攻撃のまま
-                case "end": return "エンドフェイズ";
-                case "gameOver": return "ゲーム終了";
-                default: return phase;
+                case "setup": return "ゲーム準備中"; case "start": return "スタートフェイズ"; case "draw": return "ドローフェイズ";
+                case "main": return "メインフェイズ"; case "attack": return "攻撃フェイズ"; case "block_declare": return "攻撃フェイズ";
+                case "end": return "エンドフェイズ"; case "gameOver": return "ゲーム終了"; default: return phase;
             }
         }
 
         function createCardElement(card, ownerPlayerId, location = "hand") {
-            const cardDiv = document.createElement('div');
-            cardDiv.classList.add('card', `${card.type}-card`);
-            cardDiv.dataset.uuid = card.uuid;
-            cardDiv.dataset.owner = ownerPlayerId;
-
-            if (card.uuid === selectedPlayerCardUUID && ownerPlayerId === selectedOwnerPlayerId) {
-                cardDiv.classList.add('selected-card');
+            const cardDiv = document.createElement('div'); cardDiv.classList.add('card', `${card.type}-card`);
+            cardDiv.dataset.uuid = card.uuid; cardDiv.dataset.owner = ownerPlayerId;
+            
+            if (card.uuid === selectedPlayerCardUUID && ownerPlayerId === selectedOwnerPlayerId && (attackActionPending || effectTargetSelected || attackTargetSelected)) {
+                cardDiv.classList.add('selected-for-action');
             }
-            if (location === "blockerCandidateDisplay" && card.uuid === selectedBlockerUUID) { // Changed from "blockerCandidate"
-                cardDiv.classList.add('selected-card'); 
+            
+            if (location === "blockerCandidateDisplay" && card.uuid === selectedBlockerUUID) {
+                cardDiv.classList.add('selected-for-action'); 
             }
-
-
-            const costEl = document.createElement('div');
-            costEl.classList.add('card-cost');
-            costEl.textContent = card.cost;
-            cardDiv.appendChild(costEl);
-            const headerEl = document.createElement('div');
-            headerEl.classList.add('card-header');
-            const nameEl = document.createElement('div');
-            nameEl.classList.add('card-name');
-            nameEl.textContent = card.name;
-            headerEl.appendChild(nameEl);
-            const typeEl = document.createElement('div');
-            typeEl.classList.add('card-type');
-            typeEl.textContent = card.type.toUpperCase();
-            headerEl.appendChild(typeEl);
+            const costEl = document.createElement('div'); costEl.classList.add('card-cost'); costEl.textContent = card.cost; cardDiv.appendChild(costEl);
+            const headerEl = document.createElement('div'); headerEl.classList.add('card-header');
+            const nameEl = document.createElement('div'); nameEl.classList.add('card-name'); nameEl.textContent = card.name; headerEl.appendChild(nameEl);
+            const typeEl = document.createElement('div'); typeEl.classList.add('card-type'); typeEl.textContent = card.type.toUpperCase(); headerEl.appendChild(typeEl);
             cardDiv.appendChild(headerEl);
-            const imgPlaceholderEl = document.createElement('div');
-            imgPlaceholderEl.classList.add('card-image-placeholder');
-            const imgContent = document.createElement('img');
-            imgContent.src = card.illust_url;
-            imgContent.alt = card.name;
+            const imgPlaceholderEl = document.createElement('div'); imgPlaceholderEl.classList.add('card-image-placeholder');
+            const imgContent = document.createElement('img'); imgContent.src = card.illust_url; imgContent.alt = card.name;
             imgContent.onerror = () => { imgContent.src = "https://placehold.co/100x70/e0e0e0/777?text=Error"; };
-            imgPlaceholderEl.appendChild(imgContent);
-            cardDiv.appendChild(imgPlaceholderEl);
-
+            imgPlaceholderEl.appendChild(imgContent); cardDiv.appendChild(imgPlaceholderEl);
             if (card.type === "unit") {
-                const statsEl = document.createElement('div');
-                statsEl.classList.add('card-stats');
+                const statsEl = document.createElement('div'); statsEl.classList.add('card-stats');
                 statsEl.innerHTML = `<span>攻:${card.attack}</span><span>体:${card.currentHealth || card.health}</span>`;
                 cardDiv.appendChild(statsEl);
                 if (card.canAttack && !card.hasAttackedThisTurn) cardDiv.classList.add('can-attack');
                 if (card.hasAttackedThisTurn) cardDiv.classList.add('has-attacked');
             }
-            
-            const descriptionEl = document.createElement('div');
-            descriptionEl.classList.add('card-description');
-            descriptionEl.textContent = card.description;
+            const descriptionEl = document.createElement('div'); descriptionEl.classList.add('card-description'); descriptionEl.textContent = card.description;
             cardDiv.appendChild(descriptionEl);
-
-            if (card.type === "trap" && card.isSet) {
-                cardDiv.classList.add('trap-card-set');
-            }
+            if (card.type === "trap" && card.isSet) cardDiv.classList.add('trap-card-set');
 
             if (location !== "detail" && location !== "summon" && location !== "blockerCandidateDisplay") {
                 cardDiv.onclick = (e) => {
                     e.stopPropagation();
                     if (gamePhase === "block_declare" && location === "fieldUnit" && ownerPlayerId !== players[currentPlayerIndex].id) {
-                        // ブロック宣言フェイズ中、防御側プレイヤーのフィールドユニットクリック
-                        handleBlockerUnitClick(card, ownerPlayerId);
+                        handleBlockerUnitClick(card, ownerPlayerId); 
                     } else {
                         handleCardClick(card, ownerPlayerId, location);
                     }
                 };
-            } else if (location === "blockerCandidateDisplay") { // ブロック選択モーダル内のカード
-                 cardDiv.onclick = (e) => {
-                    e.stopPropagation();
-                    handleBlockerUnitClick(card, ownerPlayerId); // これもブロッカー選択用
-                };
+            } else if (location === "blockerCandidateDisplay") {
+                 cardDiv.onclick = (e) => { e.stopPropagation(); handleBlockerUnitClick(card, ownerPlayerId); };
             }
             return cardDiv;
         }
         
         function renderHand(player) {
             player.playerElements.handEl.innerHTML = '';
-            if (player.hand.length === 0 && player.id === "player1") {
-                 player.playerElements.handEl.textContent = "手札なし";
-            } else if (player.hand.length === 0 && player.id === "player2") {
-                 player.playerElements.handEl.innerHTML = `<div class="text-gray-500 p-4">相手の手札なし</div>`;
-            }
-            else {
-                player.hand.forEach(card => {
-                    player.playerElements.handEl.appendChild(createCardElement(card, player.id, "hand"));
-                });
-            }
+            if (player.hand.length === 0 && player.id === "player1") player.playerElements.handEl.textContent = "手札なし";
+            else if (player.hand.length === 0 && player.id === "player2") player.playerElements.handEl.innerHTML = `<div class="text-gray-500 p-4">相手の手札なし</div>`;
+            else player.hand.forEach(card => player.playerElements.handEl.appendChild(createCardElement(card, player.id, "hand")));
         }
         function renderFieldUnits(player) {
             const label = player.playerElements.fieldUnitsEl.querySelector('.field-zone-label');
-            player.playerElements.fieldUnitsEl.innerHTML = '';
-            if (label) player.playerElements.fieldUnitsEl.appendChild(label);
+            player.playerElements.fieldUnitsEl.innerHTML = ''; if (label) player.playerElements.fieldUnitsEl.appendChild(label);
             player.fieldUnits.forEach(unit => {
                 const cardEl = createCardElement(unit, player.id, "fieldUnit");
                 if (gamePhase === "block_declare" && player.id !== players[currentPlayerIndex].id && unit.uuid === selectedBlockerUUID) {
-                    cardEl.classList.add('selected-card'); // 選択されたブロッカーをハイライト
+                    cardEl.classList.add('selected-for-action');
                 }
                 player.playerElements.fieldUnitsEl.appendChild(cardEl);
             });
         }
         function renderFieldTrap(player) {
             const label = player.playerElements.fieldTrapEl.querySelector('.field-zone-label');
-            player.playerElements.fieldTrapEl.innerHTML = '';
-            if (label) player.playerElements.fieldTrapEl.appendChild(label);
-            if (player.fieldTrap) {
-                player.playerElements.fieldTrapEl.appendChild(createCardElement(player.fieldTrap, player.id, "fieldTrap"));
-            }
+            player.playerElements.fieldTrapEl.innerHTML = ''; if (label) player.playerElements.fieldTrapEl.appendChild(label);
+            if (player.fieldTrap) player.playerElements.fieldTrapEl.appendChild(createCardElement(player.fieldTrap, player.id, "fieldTrap"));
         }
         function renderFieldResource(player) {
             const label = player.playerElements.fieldResourceEl.querySelector('.field-zone-label');
-            player.playerElements.fieldResourceEl.innerHTML = '';
-            if (label) player.playerElements.fieldResourceEl.appendChild(label);
-            if (player.fieldResource) {
-                player.playerElements.fieldResourceEl.appendChild(createCardElement(player.fieldResource, player.id, "fieldResource"));
-            }
+            player.playerElements.fieldResourceEl.innerHTML = ''; if (label) player.playerElements.fieldResourceEl.appendChild(label);
+            if (player.fieldResource) player.playerElements.fieldResourceEl.appendChild(createCardElement(player.fieldResource, player.id, "fieldResource"));
         }
         function changePhase(newPhase) {
             if (checkWinCondition()) return;
-            const oldPhase = gamePhase;
-            gamePhase = newPhase;
-            if (oldPhase === "block_declare" && newPhase === "attack") {
-                subPhaseEl.textContent = "";
-            } else {
-                 logMessage(`${players[currentPlayerIndex].name} - ${getPhaseNameJP(newPhase)}開始`);
-            }
+            const oldPhase = gamePhase; gamePhase = newPhase;
+            if (oldPhase === "block_declare" && newPhase === "attack") subPhaseEl.textContent = "";
+            else logMessage(`${players[currentPlayerIndex].name} - ${getPhaseNameJP(newPhase)}開始`);
             clearSelections();
-            if (newPhase !== "block_declare") { 
-                 clearEffectSelection();
-            }
-            updateAllUI();
-            switch (newPhase) {
-                case "start": handleStartPhase(); break;
+            if (newPhase !== "block_declare") clearEffectSelection();
+            updateAllUI();            switch (newPhase) {
+                case "start": handleStartPhase(); break; 
                 case "draw": handleDrawPhase(); break;
-                case "main": handleMainPhase(); break;
+                case "main": handleMainPhase(); break; 
                 case "attack": handleAttackPhaseEntry(); break;
                 case "end": handleEndPhase(); break;
             }
         }
-        function handleStartPhase() {
+          function handleStartPhase() {
             const player = players[currentPlayerIndex];
-            if (player.fieldResource) {
-                const resourceEffect = player.fieldResource.effects.find(e => e.type === "continuous" && e.phase === "start");
-                if (resourceEffect) applyEffect(player.fieldResource, resourceEffect, player, null);
-            }
-            player.core = Math.min(MAX_CORE, player.core + CORE_PER_TURN);
-            logMessage(`${player.name} は ${CORE_PER_TURN} コア獲得。`);
+            if (player.fieldResource) { const resourceEffect = player.fieldResource.effects.find(e => e.type === "continuous" && e.phase === "start"); if (resourceEffect) applyEffect(player.fieldResource, resourceEffect, player, null); }
+            
+            // スタートフェイズではコア回復なし - ドローフェイズで行う
+            
+            player.lastTurnCoreUsed = false; // 新しいターン開始時に初期化
             player.fieldUnits.forEach(unit => { unit.canAttack = true; unit.hasAttackedThisTurn = false; unit.isResting = false; });
             updateAllUI();
-        }
-        function handleDrawPhase() {
-            const player = players[currentPlayerIndex];
-            drawCard(player);
-            if (player.fieldResource) {
-                const resourceEffect = player.fieldResource.effects.find(e => e.type === "continuous" && e.phase === "draw");
-                if (resourceEffect) applyEffect(player.fieldResource, resourceEffect, player, null);
+        }        function handleDrawPhase() {
+            try {
+                const player = players[currentPlayerIndex]; 
+                if (!player) {
+                    logMessage("エラー: プレイヤーが見つかりません", true);
+                    return;
+                }
+                
+                // コア回復ロジック：現在のプレイヤーのみコアを8まで回復
+                const coreToAdd = MAX_RECOVERY_CORE - player.core;
+                if (coreToAdd > 0) {
+                    player.core = MAX_RECOVERY_CORE;
+                    logMessage(`${player.name} のコアが ${MAX_RECOVERY_CORE} まで回復しました。`, false);
+                }
+                
+                // カードを引く
+                drawCard(player);
+                
+                if (player.fieldResource) { 
+                    const resourceEffect = player.fieldResource.effects.find(e => e.type === "continuous" && e.phase === "draw"); 
+                    if (resourceEffect) applyEffect(player.fieldResource, resourceEffect, player, null); 
+                }
+                
+                // UIを更新してからメインフェイズに移行
+                updateAllUI();
+                logMessage(`${player.name} のドローフェイズ完了。メインフェイズへ移行します。`);
+                
+                // 安全なタイミングでフェイズ変更
+                setTimeout(() => {
+                    changePhase("main");
+                }, 100);
+            } catch (error) {
+                console.error("ドローフェイズ処理エラー:", error);
+                logMessage("ドローフェイズでエラーが発生しました。ゲームを再開します。", true);
+                gamePhase = "main";
+                updateAllUI();
             }
-            updateAllUI();
         }
         function drawCard(player, log = true) {
             if (player.deck.length > 0) {
-                if (player.hand.length < MAX_HAND_SIZE) {
-                    const card = player.deck.pop(); player.hand.push(card);
-                    if(log) logMessage(`${player.name} はカード「${card.name}」を引いた。`);
-                } else {
-                    const card = player.deck.pop(); player.discardPile.push(card);
-                    if(log) logMessage(`${player.name} はカード「${card.name}」を引いたが手札上限のため捨て札へ。`);
-                }
+                if (player.hand.length < MAX_HAND_SIZE) { const card = player.deck.pop(); player.hand.push(card); if(log) logMessage(`${player.name} はカード「${card.name}」を引いた。`); }
+                else { const card = player.deck.pop(); player.discardPile.push(card); if(log) logMessage(`${player.name} はカード「${card.name}」を引いたが手札上限のため捨て札へ。`); }
             } else {
                 if(log) logMessage(`${player.name} のデッキがありません！ ${DECK_OUT_DAMAGE} ダメージ。`, true);
-                player.lp -= DECK_OUT_DAMAGE;
-                if (checkWinCondition()) return;
+                player.lp -= DECK_OUT_DAMAGE; if (checkWinCondition()) return;
             }
         }
-        function handleMainPhase() {
-            logMessage(`${players[currentPlayerIndex].name} のメインフェイズ。アクションを選択してください。`);
-        }
+        function handleMainPhase() { logMessage(`${players[currentPlayerIndex].name} のメインフェイズ。アクションを選択してください。`); }
         function handleAttackPhaseEntry() {
             const player = players[currentPlayerIndex];
             const attackableUnits = player.fieldUnits.filter(u => u.canAttack && !u.hasAttackedThisTurn);
-            if (attackableUnits.length === 0 && gamePhase === "attack") { 
-                logMessage("攻撃可能なユニットがいません。");
-            }
+            if (attackableUnits.length === 0 && gamePhase === "attack") logMessage("攻撃可能なユニットがいません。");
+            attackActionAreaEl.innerHTML = ''; 
+            attackActionPending = false; 
+            attackTargetSelected = false; 
         }
         function handleEndPhase() {
             const player = players[currentPlayerIndex];
             if (player.hand.length > MAX_HAND_SIZE) {
                 const excessCount = player.hand.length - MAX_HAND_SIZE;
-                for (let i = 0; i < excessCount; i++) {
-                    const discardedCard = player.hand.shift(); player.discardPile.push(discardedCard);
-                    logMessage(`${player.name} は手札上限を超えたため ${discardedCard.name} を捨てた。`);
-                }
+                for (let i = 0; i < excessCount; i++) { const discardedCard = player.hand.shift(); player.discardPile.push(discardedCard); logMessage(`${player.name} は手札上限を超えたため ${discardedCard.name} を捨てた。`); }
             }
-            player.isTurnPlayer = false;
-            currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
-            players[currentPlayerIndex].isTurnPlayer = true;
-            turnCount++;
+            player.isTurnPlayer = false; currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+            players[currentPlayerIndex].isTurnPlayer = true; turnCount++;
             logMessage(`ターン終了。次は ${players[currentPlayerIndex].name} のターンです。`);
             changePhase("start");
         }
         function updateActionButtons() {
             actionButtonsEl.innerHTML = '';
             if (gamePhase === "gameOver") {
-                const restartButton = document.createElement('button');
-                restartButton.textContent = "ゲームを再開する";
-                restartButton.classList.add('action-button', 'bg-blue-500', 'hover:bg-blue-700', 'text-white');
-                restartButton.onclick = () => { gameLogEl.innerHTML = ''; initGame(); };
-                actionButtonsEl.appendChild(restartButton);
+                const restartButton = document.createElement('button'); restartButton.textContent = "ゲームを再開する"; restartButton.classList.add('action-button', 'bg-blue-500', 'hover:bg-blue-700', 'text-white');
+                restartButton.onclick = () => { gameLogEl.innerHTML = ''; initGame(); }; actionButtonsEl.appendChild(restartButton); return;
+            }
+            if (gamePhase === "block_declare" || attackActionPending || attackTargetSelected) { 
+                if (gamePhase === "block_declare") actionButtonsEl.innerHTML = `<p class="text-cyan-600 font-semibold">${players[(currentPlayerIndex + 1) % players.length].name} がブロックを選択中です...</p>`;
                 return;
             }
-            if (gamePhase === "block_declare") { 
-                actionButtonsEl.innerHTML = `<p class="text-cyan-600 font-semibold">${players[(currentPlayerIndex + 1) % players.length].name} がブロックを選択中です...</p>`;
-                return;
-            }
-
             switch (gamePhase) {
-                case "start":
-                    const toDrawButton = document.createElement('button');
-                    toDrawButton.textContent = "ドローフェイズへ";
-                    toDrawButton.classList.add('action-button', 'bg-green-500', 'hover:bg-green-700', 'text-white');
-                    toDrawButton.onclick = () => changePhase("draw");
-                    actionButtonsEl.appendChild(toDrawButton);
-                    break;
-                case "draw":
-                    const toMainButtonFromDraw = document.createElement('button');
-                    toMainButtonFromDraw.textContent = "メインフェイズへ";
-                    toMainButtonFromDraw.classList.add('action-button', 'bg-green-500', 'hover:bg-green-700', 'text-white');
-                    toMainButtonFromDraw.onclick = () => changePhase("main");
-                    actionButtonsEl.appendChild(toMainButtonFromDraw);
-                    break;
+                case "start": const toDrawButton = document.createElement('button'); toDrawButton.textContent = "ドローフェイズへ"; toDrawButton.classList.add('action-button', 'bg-green-500', 'hover:bg-green-700', 'text-white'); toDrawButton.onclick = () => changePhase("draw"); actionButtonsEl.appendChild(toDrawButton); break;
                 case "main":
-                    const toAttackButton = document.createElement('button');
-                    toAttackButton.textContent = "攻撃フェイズへ";
-                    toAttackButton.classList.add('action-button', 'bg-red-500', 'hover:bg-red-700', 'text-white');
-                    toAttackButton.onclick = () => changePhase("attack");
-                    actionButtonsEl.appendChild(toAttackButton);
-                    const toEndButtonFromMain = document.createElement('button');
-                    toEndButtonFromMain.textContent = "ターン終了";
-                    toEndButtonFromMain.classList.add('action-button', 'bg-gray-500', 'hover:bg-gray-700', 'text-white');
-                    toEndButtonFromMain.onclick = () => changePhase("end");
-                    actionButtonsEl.appendChild(toEndButtonFromMain);
-                    break;
+                    const toAttackButton = document.createElement('button'); toAttackButton.textContent = "攻撃フェイズへ"; toAttackButton.classList.add('action-button', 'bg-red-500', 'hover:bg-red-700', 'text-white'); toAttackButton.onclick = () => changePhase("attack"); actionButtonsEl.appendChild(toAttackButton);
+                    const toEndButtonFromMain = document.createElement('button'); toEndButtonFromMain.textContent = "ターン終了"; toEndButtonFromMain.classList.add('action-button', 'bg-gray-500', 'hover:bg-gray-700', 'text-white'); toEndButtonFromMain.onclick = () => changePhase("end"); actionButtonsEl.appendChild(toEndButtonFromMain); break;
                 case "attack":
-                    const toEndButtonFromAttack = document.createElement('button');
-                    toEndButtonFromAttack.textContent = "攻撃終了 (メインへ)";
-                    toEndButtonFromAttack.classList.add('action-button', 'bg-blue-500', 'hover:bg-blue-700', 'text-white');
-                    toEndButtonFromAttack.onclick = () => { logMessage("攻撃フェイズを終了し、メインフェイズに戻ります。"); changePhase("main"); };
-                    actionButtonsEl.appendChild(toEndButtonFromAttack);
-                    const directToEndButton = document.createElement('button');
-                    directToEndButton.textContent = "ターン終了";
-                    directToEndButton.classList.add('action-button', 'bg-gray-500', 'hover:bg-gray-700', 'text-white');
-                    directToEndButton.onclick = () => changePhase("end");
-                    actionButtonsEl.appendChild(directToEndButton);
-                    break;
+                    const toEndButtonFromAttack = document.createElement('button'); toEndButtonFromAttack.textContent = "攻撃終了 (メインへ)"; toEndButtonFromAttack.classList.add('action-button', 'bg-blue-500', 'hover:bg-blue-700', 'text-white'); toEndButtonFromAttack.onclick = () => { logMessage("攻撃フェイズを終了し、メインフェイズに戻ります。"); resetBlockSelectionState(); changePhase("main"); }; actionButtonsEl.appendChild(toEndButtonFromAttack);
+                    const directToEndButton = document.createElement('button'); directToEndButton.textContent = "ターン終了"; directToEndButton.classList.add('action-button', 'bg-gray-500', 'hover:bg-gray-700', 'text-white'); directToEndButton.onclick = () => { resetBlockSelectionState(); changePhase("end");}; actionButtonsEl.appendChild(directToEndButton); break;
             }
         }
         function handleCardClick(card, ownerPlayerId, location) {
             showCardDetail(card, ownerPlayerId);
-            const player = players.find(p => p.id === ownerPlayerId);
+            const player = players.find(p => p.id === ownerPlayerId); 
             if (!player) return;
-            if (location === "hand" && gamePhase === "main" && player.isTurnPlayer) {
-                cardToSummon = card;
-                summonerPlayerId = ownerPlayerId;
-                summonCardDisplay.innerHTML = '';
-                const cardElementForSummon = createCardElement(card, ownerPlayerId, "summon");
-                cardElementForSummon.style.cursor = "default";
-                summonCardDisplay.appendChild(cardElementForSummon);
-                confirmSummonButton.disabled = player.core < card.cost;
-                summonConfirmModal.style.display = "flex";
-            } else if (location === "fieldUnit" && player.isTurnPlayer && gamePhase === "attack") {
-                 handleFieldUnitClick(card.uuid, ownerPlayerId);
-            } else if (location === "fieldUnit" && player.isTurnPlayer && gamePhase === "main") {
-                handleFieldUnitClick(card.uuid, ownerPlayerId);
-            }
         }
         function actuallyPlayCard(cardToPlay, PId) {
-            const player = players.find(p => p.id === PId);
+            const player = players.find(p => p.id === PId); 
             if (!player || !cardToPlay) return;
+            
             const cardIndexInHand = player.hand.findIndex(c => c.uuid === cardToPlay.uuid);
-            if (cardIndexInHand === -1) { logMessage("エラー: 召喚しようとしたカードが手札に見つかりません。"); return; }
-            if (player.core < cardToPlay.cost) { showMessage(`${player.name} のコアが足りません。`); return; }
-
+            if (cardIndexInHand === -1) { 
+                logMessage("エラー: 召喚しようとしたカードが手札に見つかりません。"); 
+                return; 
+            }
+            
+            if (player.core < cardToPlay.cost) { 
+                showMessage(`${player.name} のコアが足りません。`); 
+                return; 
+            }
+            
             if (cardToPlay.type === "unit") {
-                if (player.fieldUnits.length >= MAX_UNITS_ON_FIELD) { showMessage(`${player.name} のユニットゾーンに空きがありません。`); return; }
-                player.core -= cardToPlay.cost;
+                if (player.fieldUnits.length >= MAX_UNITS_ON_FIELD) { 
+                    showMessage(`${player.name} のユニットゾーンに空きがありません。`); 
+                    return; 
+                }                player.core -= cardToPlay.cost;
+                player.lastTurnCoreUsed = true; // コアを使用したのでフラグを立てる
                 const playedCard = player.hand.splice(cardIndexInHand, 1)[0];
                 playedCard.canAttack = !!playedCard.effects.some(e => e.type === "keyword" && e.name === "速攻");
-                playedCard.hasAttackedThisTurn = false;
+                playedCard.hasAttackedThisTurn = false; 
                 player.fieldUnits.push(playedCard);
                 logMessage(`${player.name} は ${playedCard.name} を召喚！ (コスト ${cardToPlay.cost})`, true);
-                const onPlayEffect = playedCard.effects.find(e => e.type === "onPlay");
-                if (onPlayEffect) { handleOnPlayEffect(playedCard, onPlayEffect, player); }
+                const onPlayEffect = playedCard.effects.find(e => e.type === "onPlay"); 
+                if (onPlayEffect) handleOnPlayEffect(playedCard, onPlayEffect, player);
             } else if (cardToPlay.type === "trap") {
-                if (player.fieldTrap) { showMessage(`${player.name} のトラップゾーンは既に使用されています。`); return; }
-                player.core -= cardToPlay.cost;
+                if (player.fieldTrap) { 
+                    showMessage(`${player.name} のトラップゾーンは既に使用されています。`); 
+                    return; 
+                }                player.core -= cardToPlay.cost;
+                player.lastTurnCoreUsed = true; // コアを使用したのでフラグを立てる
                 const playedCard = player.hand.splice(cardIndexInHand, 1)[0];
-                playedCard.isSet = true; player.fieldTrap = playedCard;
+                playedCard.isSet = true; 
+                player.fieldTrap = playedCard; 
                 logMessage(`${player.name} はトラップカード「${playedCard.name}」をセットした。 (コスト ${cardToPlay.cost})`, true);
             } else if (cardToPlay.type === "resource") {
-                 if (player.fieldResource) { showMessage(`${player.name} のリソースゾーンは既に使用されています。`); return; }
-                player.core -= cardToPlay.cost;
+                if (player.fieldResource) { 
+                    showMessage(`${player.name} のリソースゾーンは既に使用されています。`); 
+                    return; 
+                }                player.core -= cardToPlay.cost;
+                player.lastTurnCoreUsed = true; // コアを使用したのでフラグを立てる
                 const playedCard = player.hand.splice(cardIndexInHand, 1)[0];
-                player.fieldResource = playedCard;
+                player.fieldResource = playedCard; 
                 logMessage(`${player.name} はリソースカード「${playedCard.name}」をプレイ！ (コスト ${cardToPlay.cost})`, true);
             }
-            updateAllUI(); checkWinCondition();
+            
+            updateAllUI(); 
+            checkWinCondition();
         }
-        function handleFieldUnitClick(unitUUID, ownerPlayerId) {
-            const unitOwner = players.find(p => p.id === ownerPlayerId);
-            if (!unitOwner) return;
-            const unit = unitOwner.fieldUnits.find(u => u.uuid === unitUUID);
-            if (!unit) return;
 
-            if (attackTargetSelected) { 
-                const attackerOwner = players.find(p => p.id === selectedOwnerPlayerId);
-                if (!attackerOwner) { clearSelections(); updateAllUI(); return; }
-                const attackerUnit = attackerOwner.fieldUnits.find(u => u.uuid === selectedPlayerCardUUID);
-                if (attackerUnit && unitOwner.id !== attackerOwner.id) { 
-                    const tauntUnits = unitOwner.fieldUnits.filter(u => u.effects.some(e => e.type === "keyword" && e.name === "挑発"));
-                    if (tauntUnits.length > 0 && !tauntUnits.some(tu => tu.uuid === unit.uuid)) {
-                        showMessage("挑発ユニットがいます。そちらを先に攻撃してください。"); return;
-                    }
-                    currentAttackerInfo = { unit: attackerUnit, owner: attackerOwner };
-                    currentAttackTargetInfo = { target: unit, ownerId: unitOwner.id, type: "unit" };
-                    gamePhase = "block_declare"; 
-                    subPhaseEl.textContent = "ブロック宣言";
-                    updateAllUI(); 
-                    promptBlockSelection(attackerUnit, unit, unitOwner);
-                }
-                clearSelections(); 
-                return;
-            }
-            if (effectTargetSelected && currentEffectAction) {
-                const sourceCard = findCardByUUID(currentEffectAction.sourceCardUUID);
-                const effectSourcePlayer = currentEffectAction.sourcePlayer;
-                if (currentEffectAction.target === "opponentUnit" && unitOwner.id !== effectSourcePlayer.id) {
-                    applyEffect(sourceCard, currentEffectAction.effect, unit, effectSourcePlayer);
-                    clearEffectSelection(); updateAllUI();
-                } else if (currentEffectAction.target === "playerUnit" && unitOwner.id === effectSourcePlayer.id) {
-                    applyEffect(sourceCard, currentEffectAction.effect, unit, effectSourcePlayer);
-                    clearEffectSelection(); updateAllUI();
-                }
-                return;
-            }
-            if (gamePhase === "attack" && unitOwner.isTurnPlayer) {
-                if (!unit.canAttack) { showMessage(`${unit.name} は行動できません。`); return; }
-                if (unit.hasAttackedThisTurn) { showMessage(`${unit.name} は既に攻撃済みです。`); return; }
+        function displayAttackButton(unit) {
+            attackActionAreaEl.innerHTML = ''; 
+            const attackButton = document.createElement('button');
+            attackButton.textContent = `${unit.name} で攻撃する`;
+            attackButton.classList.add('action-button', 'bg-orange-500', 'hover:bg-orange-700', 'text-white');
+            attackButton.onclick = () => {
+                attackActionPending = false; 
+                attackTargetSelected = true; 
+                logMessage(`${unit.name} の攻撃対象を選択してください。`);
+                attackActionAreaEl.innerHTML = ''; // 攻撃ボタン自身を消す
+                updateAllUI(); 
+            };
+            attackActionAreaEl.appendChild(attackButton);
+            const cancelAttackButton = document.createElement('button');
+            cancelAttackButton.textContent = '攻撃キャンセル';
+            cancelAttackButton.classList.add('action-button', 'bg-gray-400', 'hover:bg-gray-600', 'text-white');
+            cancelAttackButton.onclick = () => {
                 clearSelections();
-                selectedPlayerCardUUID = unit.uuid;
-                selectedOwnerPlayerId = unitOwner.id;
-                attackTargetSelected = true;
-                logMessage(`${unitOwner.name} の ${unit.name} で攻撃します。攻撃対象を選択してください。`);
+                attackActionPending = false;
+                attackTargetSelected = false;
+                attackActionAreaEl.innerHTML = '';
                 updateAllUI();
-            } else if (gamePhase === "main" && unitOwner.isTurnPlayer) {
-                 logMessage(`${unitOwner.name} の ${unit.name} を選択しました。(メインフェイズ)`);
-                clearSelections();
-                selectedPlayerCardUUID = unit.uuid;
-                selectedOwnerPlayerId = unitOwner.id;
-                updateAllUI();
-            }
+            };
+            attackActionAreaEl.appendChild(cancelAttackButton);
         }
+
+
         function handleOnPlayEffect(playedCard, effect, effectOwnerPlayer) {
             logMessage(`${playedCard.name} の場に出た時効果発動: ${effect.action}`);
             if (effect.target === "opponentUnit" || effect.target === "playerUnit") {
@@ -1004,14 +859,11 @@
                 if (opponentPlayerElement) {
                      opponentPlayerElement.classList.add('targetable');
                      opponentPlayerElement.onclick = () => { 
-                        if (attackTargetSelected && selectedPlayerCardUUID === attackingUnit.uuid) {
-                            currentAttackerInfo = { unit: attackingUnit, owner: attackerPlayer };
-                            currentAttackTargetInfo = { target: defenderPlayer, ownerId: defenderPlayer.id, type: "player" };
-                            gamePhase = "block_declare";
-                            subPhaseEl.textContent = "ブロック宣言";
+                        if (attackTargetSelected && selectedPlayerCardUUID === attackingUnit.uuid) { 
+                            performAttack(attackingUnit.uuid, attackerPlayer.id, defenderPlayer.id, null, "player");
+                            attackActionPending = false; attackTargetSelected = false; attackActionAreaEl.innerHTML = ''; 
+                            clearSelections(); // 攻撃後は選択解除
                             updateAllUI();
-                            promptBlockSelection(attackingUnit, defenderPlayer, defenderPlayer); 
-                            clearSelections();
                         }
                      };
                 }
@@ -1046,19 +898,20 @@
             const previouslySelectedOwnerId = selectedOwnerPlayerId;
             selectedPlayerCardUUID = null;
             selectedOwnerPlayerId = null; 
-            attackTargetSelected = false;
+            // attackActionPending = false; // ここではクリアせず、攻撃フローの完了時に行う
+            // attackTargetSelected = false; // 同上
             if (previouslySelectedCardUUID && previouslySelectedOwnerId) {
-                document.querySelectorAll(`.card[data-uuid="${previouslySelectedCardUUID}"][data-owner="${previouslySelectedOwnerId}"]`).forEach(el => el.classList.remove('selected-card'));
+                document.querySelectorAll(`.card[data-uuid="${previouslySelectedCardUUID}"][data-owner="${previouslySelectedOwnerId}"].selected-for-action`)
+                    .forEach(el => el.classList.remove('selected-for-action'));
             }
             clearHighlights();
+            // attackActionAreaEl.innerHTML = ''; // 攻撃ボタンもクリア (状況による)
         }
         function clearEffectSelection() {
             effectTargetSelected = false;
             currentEffectAction = null;
             clearHighlights();
-        }
-
-        function promptBlockSelection(attackerUnit, attackedTarget, defenderPlayer) {
+        }        function promptBlockSelection(attackerUnit, attackedTarget, defenderPlayer) {
             logMessage(`${defenderPlayer.name} はブロックを選択してください。 ${attackerUnit.name} が ${attackedTarget.name || attackedTarget.id} に攻撃。`);
             blockInfoEl.innerHTML = `
                 <p><b>${attackerUnit.name}</b> (攻 ${attackerUnit.attack}) が <b>${attackedTarget.name || attackedTarget.id}</b> に攻撃しています。</p>
@@ -1069,38 +922,63 @@
 
             const attackerIsFlying = attackerUnit.effects.some(e => e.type === "keyword" && e.name === "飛行");
 
-            defenderPlayer.fieldUnits.forEach(unit => {
+            // ブロック可能なユニットをリストアップ
+            const blockableUnits = defenderPlayer.fieldUnits.filter(unit => {
                 let canBlock = true;
-                if (attackedTarget.type === "unit" && attackedTarget.effects.some(e => e.type === "keyword" && e.name === "飛行")) {
+                // 攻撃対象が飛行ユニットの場合、飛行持ちユニットのみがブロック可能
+                if (attackedTarget.type === "unit" && attackedTarget.effects && 
+                    attackedTarget.effects.some(e => e.type === "keyword" && e.name === "飛行")) {
                     if (!unit.effects.some(e => e.type === "keyword" && e.name === "飛行")) {
                         canBlock = false; 
                     }
                 }
+                // 攻撃ユニットが飛行を持つ場合、飛行持ちユニットのみがブロック可能
                 if (attackerIsFlying && !unit.effects.some(e => e.type === "keyword" && e.name === "飛行")) {
                     canBlock = false;
                 }
-                if (canBlock) {
-                    const cardEl = createCardElement(unit, defenderPlayer.id, "blockerCandidateDisplay"); 
-                    cardEl.classList.add('blocker-candidate');
-                    blockerSelectionAreaEl.appendChild(cardEl);
+                // 疲労状態のユニットはブロックできない
+                if (unit.isResting) {
+                    canBlock = false;
                 }
+                return canBlock;
             });
-            if (blockerSelectionAreaEl.children.length === 0) {
-                blockerSelectionAreaEl.textContent = "ブロック可能なユニットがいません。";
-            }
-            blockSelectModal.style.display = "flex";
-        }
 
-        function handleBlockerUnitClick(blockerCard, ownerId) {
-            if (gamePhase !== "block_declare") return;
-            document.querySelectorAll('#blockerSelectionArea .selected-card').forEach(el => el.classList.remove('selected-card'));
+            // ブロック可能なユニットを表示
+            if (blockableUnits.length === 0) {
+                blockerSelectionAreaEl.innerHTML = '<p>ブロック可能なユニットがありません</p>';
+            } else {
+                blockableUnits.forEach(unit => {
+                    const cardEl = createCardElement(unit, defenderPlayer.id, "blockerCandidateDisplay"); 
+                    cardEl.classList.add('blocker-candidate'); 
+                    blockerSelectionAreaEl.appendChild(cardEl);
+                });
+            }
             
+            // ブロック選択モーダルを表示
+            blockSelectModal.style.display = "flex";
+        }        function handleBlockerUnitClick(blockerCard, ownerId) { 
+            if (gamePhase !== "block_declare") return;
+            const defenderPlayer = players.find(p => p.id === ownerId);
+            if (!defenderPlayer || defenderPlayer.isTurnPlayer) return; 
+
+            // 選択状態をクリア
+            document.querySelectorAll('#blockerSelectionArea .selected-for-action').forEach(el => el.classList.remove('selected-for-action'));
+            defenderPlayer.playerElements.fieldUnitsEl.querySelectorAll('.selected-for-action').forEach(el => el.classList.remove('selected-for-action'));
+
+            // 同じユニットを再選択した場合は選択解除
             if (selectedBlockerUUID === blockerCard.uuid) { 
                 selectedBlockerUUID = null;
+                logMessage(`ブロッカーの選択を解除しました。`, false);
             } else {
+                // 新しいブロッカーを選択
                 selectedBlockerUUID = blockerCard.uuid;
                 const cardElInModal = document.querySelector(`#blockerSelectionArea .card[data-uuid="${blockerCard.uuid}"]`);
-                if (cardElInModal) cardElInModal.classList.add('selected-card');
+                if (cardElInModal) cardElInModal.classList.add('selected-for-action');
+                
+                const cardElOnField = defenderPlayer.playerElements.fieldUnitsEl.querySelector(`.card[data-uuid="${blockerCard.uuid}"]`);
+                if (cardElOnField) cardElOnField.classList.add('selected-for-action');
+                
+                logMessage(`${blockerCard.name} をブロッカーとして選択しました。`, false);
             }
         }
 
@@ -1110,178 +988,113 @@
 
             if (blockerUnit) { 
                 logMessage(`${attackerUnit.name} (攻${attackerUnit.attack}) vs ${blockerUnit.name} (攻${blockerUnit.attack}, 体${blockerUnit.currentHealth}) の戦闘！`, true);
-                
-                let damageToBlocker = attackerUnit.attack;
-                let damageToAttacker = blockerUnit.attack;
-
+                let damageToBlocker = attackerUnit.attack; let damageToAttacker = blockerUnit.attack;
                 const attackerHasPoison = attackerUnit.effects.some(e => e.type === "keyword" && e.name === "毒");
                 const blockerHasPoison = blockerUnit.effects.some(e => e.type === "keyword" && e.name === "毒");
-
-                blockerUnit.currentHealth -= damageToBlocker;
-                logMessage(`${blockerUnit.name} は ${damageToBlocker} ダメージを受けた。(残り体力 ${blockerUnit.currentHealth})`, true);
-                
-                attackerUnit.currentHealth -= damageToAttacker;
-                logMessage(`${attackerUnit.name} は反撃で ${damageToAttacker} ダメージを受けた。(残り体力 ${attackerUnit.currentHealth})`, true);
-
-                if (attackerHasPoison && damageToBlocker > 0 && blockerUnit.currentHealth > 0) {
-                    logMessage(`${attackerUnit.name} の毒効果！ ${blockerUnit.name} は戦闘後破壊される。`, true);
-                    blockerUnit.currentHealth = 0;
-                }
-                if (blockerHasPoison && damageToAttacker > 0 && attackerUnit.currentHealth > 0) {
-                    logMessage(`${blockerUnit.name} の毒効果！ ${attackerUnit.name} は戦闘後破壊される。`, true);
-                    attackerUnit.currentHealth = 0;
-                }
-
-                checkAndDestroyUnit(attackerUnit, attackerPlayer);
-                checkAndDestroyUnit(blockerUnit, defenderPlayer);
-
+                blockerUnit.currentHealth -= damageToBlocker; logMessage(`${blockerUnit.name} は ${damageToBlocker} ダメージ。(残体力 ${blockerUnit.currentHealth})`, true);
+                attackerUnit.currentHealth -= damageToAttacker; logMessage(`${attackerUnit.name} は反撃で ${damageToAttacker} ダメージ。(残体力 ${attackerUnit.currentHealth})`, true);
+                if (attackerHasPoison && damageToBlocker > 0 && blockerUnit.currentHealth > 0) { logMessage(`${attackerUnit.name} の毒効果！ ${blockerUnit.name} は破壊。`, true); blockerUnit.currentHealth = 0; }
+                if (blockerHasPoison && damageToAttacker > 0 && attackerUnit.currentHealth > 0) { logMessage(`${blockerUnit.name} の毒効果！ ${attackerUnit.name} は破壊。`, true); attackerUnit.currentHealth = 0; }
+                checkAndDestroyUnit(attackerUnit, attackerPlayer); checkAndDestroyUnit(blockerUnit, defenderPlayer);
             } else { 
                 if (attackedTarget.type === "unit") { 
                     logMessage(`${attackerUnit.name} が ${attackedTarget.name} に直接攻撃！`, true);
-                    let damageToTarget = attackerUnit.attack;
-                    const attackerHasPoison = attackerUnit.effects.some(e => e.type === "keyword" && e.name === "毒");
-
-                    attackedTarget.currentHealth -= damageToTarget;
-                    logMessage(`${attackedTarget.name} は ${damageToTarget} ダメージを受けた。(残り体力 ${attackedTarget.currentHealth})`, true);
-
-                    if (attackerHasPoison && damageToTarget > 0 && attackedTarget.currentHealth > 0) {
-                         logMessage(`${attackerUnit.name} の毒効果！ ${attackedTarget.name} は戦闘後破壊される。`, true);
-                        attackedTarget.currentHealth = 0;
-                    }
-                    checkAndDestroyUnit(attackedTarget, defenderPlayer); 
-                     checkAndDestroyUnit(attackerUnit, attackerPlayer); 
-
+                    let damageToTarget = attackerUnit.attack; const attackerHasPoison = attackerUnit.effects.some(e => e.type === "keyword" && e.name === "毒");
+                    attackedTarget.currentHealth -= damageToTarget; logMessage(`${attackedTarget.name} は ${damageToTarget} ダメージ。(残体力 ${attackedTarget.currentHealth})`, true);
+                    if (attackerHasPoison && damageToTarget > 0 && attackedTarget.currentHealth > 0) { logMessage(`${attackerUnit.name} の毒効果！ ${attackedTarget.name} は破壊。`, true); attackedTarget.currentHealth = 0; }
+                    checkAndDestroyUnit(attackedTarget, defenderPlayer); checkAndDestroyUnit(attackerUnit, attackerPlayer); 
                 } else if (attackedTarget.type === "player" || attackedTarget.id === defenderPlayer.id) { 
                     logMessage(`${attackerUnit.name} が ${defenderPlayer.name} に直接攻撃！`, true);
-                    defenderPlayer.lp -= attackerUnit.attack;
-                    logMessage(`${defenderPlayer.name} は ${attackerUnit.attack} ダメージを受けた。(残りLP ${defenderPlayer.lp})`, true);
-                     checkAndDestroyUnit(attackerUnit, attackerPlayer); 
+                    defenderPlayer.lp -= attackerUnit.attack; logMessage(`${defenderPlayer.name} は ${attackerUnit.attack} ダメージ。(残LP ${defenderPlayer.lp})`, true);
+                    checkAndDestroyUnit(attackerUnit, attackerPlayer); 
                 }
             }
-            
-            updateAllUI();
-            checkWinCondition();
+            updateAllUI(); checkWinCondition();
         }
 
         function performAttack(attackerUUID, attackerOwnerId, targetId, targetOwnerId, targetType) {
             const attackerPlayer = players.find(p => p.id === attackerOwnerId);
             const targetEntityOwner = targetType === "player" ? players.find(p => p.id === targetId) : players.find(p => p.id === targetOwnerId);
-            if (!attackerPlayer || !targetEntityOwner) { logMessage("攻撃エラー: プレイヤー情報が見つかりません。", true); clearSelections(); updateAllUI(); return; }
-
+            if (!attackerPlayer || !targetEntityOwner) { logMessage("攻撃エラー: プレイヤー情報が見つかりません。", true); clearSelections(); attackActionAreaEl.innerHTML = ''; updateAllUI(); return; }
             const attackerUnit = attackerPlayer.fieldUnits.find(u => u.uuid === attackerUUID);
-            if (!attackerUnit || attackerUnit.hasAttackedThisTurn) {
-                logMessage("攻撃エラー: 攻撃ユニットが無効か、既に攻撃済みです。", true);
-                clearSelections(); updateAllUI(); return;
-            }
-            
+            if (!attackerUnit || attackerUnit.hasAttackedThisTurn) { logMessage("攻撃エラー: 攻撃ユニットが無効か、既に攻撃済みです。", true); clearSelections(); attackActionAreaEl.innerHTML = ''; updateAllUI(); return; }
             let targetEntity;
-            if (targetType === "unit") {
-                targetEntity = targetEntityOwner.fieldUnits.find(u => u.uuid === targetId);
-            } else { 
-                targetEntity = targetEntityOwner; 
-            }
-            if (!targetEntity) { logMessage("攻撃エラー: 攻撃対象が見つかりません。", true); clearSelections(); updateAllUI(); return; }
-
+            if (targetType === "unit") targetEntity = targetEntityOwner.fieldUnits.find(u => u.uuid === targetId);
+            else targetEntity = targetEntityOwner; 
+            if (!targetEntity) { logMessage("攻撃エラー: 攻撃対象が見つかりません。", true); clearSelections(); attackActionAreaEl.innerHTML = ''; updateAllUI(); return; }
 
             logMessage(`${attackerPlayer.name} の ${attackerUnit.name} が ${targetEntity.name || targetEntity.id} に攻撃宣言！`, true);
-
             const trapHolder = players.find(p => p.id !== attackerPlayer.id); 
             if (trapHolder.fieldTrap && trapHolder.fieldTrap.isSet) {
-                const trap = trapHolder.fieldTrap;
-                const trapEffect = trap.effects.find(e => e.type === "onOpponentAttackDeclaration");
+                const trap = trapHolder.fieldTrap; const trapEffect = trap.effects.find(e => e.type === "onOpponentAttackDeclaration");
                 if (trapEffect) {
                     logMessage(`${trapHolder.name} のトラップ「${trap.name}」が発動！`, true);
                     const trapTarget = trapEffect.target === "attackingUnit" ? attackerUnit : null;
                     applyEffect(trap, trapEffect, trapTarget, trapHolder);
-                    
-                    trapHolder.discardPile.push(trapHolder.fieldTrap);
-                    trapHolder.fieldTrap = null;
-                    updateAllUI(); 
-                    
+                    trapHolder.discardPile.push(trapHolder.fieldTrap); trapHolder.fieldTrap = null; updateAllUI();
                     if (!attackerPlayer.fieldUnits.some(u => u.uuid === attackerUUID) || (attackerUnit && attackerUnit.currentHealth <= 0)) {
                         logMessage(`${attackerUnit.name} はトラップにより戦闘前に破壊された！`, true);
                         if(attackerUnit) attackerUnit.hasAttackedThisTurn = true; 
-                        clearSelections();
-                        checkWinCondition();
-                        changePhase("attack"); 
-                        return; 
+                        clearSelections(); attackActionAreaEl.innerHTML = ''; checkWinCondition(); changePhase("attack"); return; 
                     }
                 }
             }
-
             currentAttackerInfo = { unit: attackerUnit, owner: attackerPlayer };
             currentAttackTargetInfo = { target: targetEntity, ownerId: targetEntityOwner.id, type: targetType };
-            gamePhase = "block_declare";
-            subPhaseEl.textContent = "ブロック宣言";
+            gamePhase = "block_declare"; subPhaseEl.textContent = "ブロック宣言";
+            attackActionAreaEl.innerHTML = ''; 
             updateAllUI();
             promptBlockSelection(attackerUnit, targetEntity, targetEntityOwner);
-            clearSelections(); 
         }
 
-
-        function checkAndDestroyUnit(unit, ownerPlayer) { /* ... */ }
-        function applyEffect(sourceCard, effect, targetEntity, effectOwnerPlayer) { /* ... */ }
-        function findCardByUUID(uuid) { /* ... */ }
-        function checkWinCondition() { /* ... */ }
-        // (checkAndDestroyUnit, applyEffect, findCardByUUID, checkWinCondition は前回と同じ)
         function checkAndDestroyUnit(unit, ownerPlayer) {
             if (unit.currentHealth <= 0) {
                 logMessage(`${unit.name} は破壊された。`, true);
                 ownerPlayer.fieldUnits = ownerPlayer.fieldUnits.filter(u => u.uuid !== unit.uuid);
                 ownerPlayer.discardPile.push(unit);
                 const onDestroyedEffect = unit.effects.find(e => e.type === "onDestroyed");
-                if (onDestroyedEffect) {
-                    applyEffect(unit, onDestroyedEffect, null, ownerPlayer);
-                }
+                if (onDestroyedEffect) applyEffect(unit, onDestroyedEffect, null, ownerPlayer);
             }
         }
         function applyEffect(sourceCard, effect, targetEntity, effectOwnerPlayer) {
-            logMessage(`効果発動: ${sourceCard.name} の ${effect.action} (対象: ${targetEntity ? targetEntity.name || targetEntity.id : 'なし'}, 発動者: ${effectOwnerPlayer.name})`, true);
+            if (!sourceCard) {
+                logMessage("エラー: 効果の発生源カード (sourceCard) が null です。", true);
+                console.error("applyEffect was called with a null sourceCard.", { effect, targetEntity, effectOwnerPlayer });
+                return;
+            }
+            const scName = sourceCard.name || "不明なカード";
+            const efAction = effect ? effect.action : "不明なアクション";
+            const tgName = targetEntity ? (targetEntity.name || targetEntity.id) : 'なし';
+            const ownerName = effectOwnerPlayer ? effectOwnerPlayer.name : "不明なプレイヤー";
+
+            logMessage(`効果発動: ${scName} の ${efAction} (対象: ${tgName}, 発動者: ${ownerName})`, true);
+            
             let actualTargetPlayer;
-            switch (effect.action) {
-                case "draw":
-                    for (let i = 0; i < effect.value; i++) { drawCard(effectOwnerPlayer); }
-                    break;
-                case "addCore":
-                    effectOwnerPlayer.core = Math.min(MAX_CORE, effectOwnerPlayer.core + effect.value);
-                    logMessage(`${effectOwnerPlayer.name} は効果で ${effect.value} コア獲得。`, true);
-                    break;
+            switch (efAction) { // Use efAction which has a fallback
+                case "draw": for (let i = 0; i < effect.value; i++) drawCard(effectOwnerPlayer); break;
+                case "addCore": effectOwnerPlayer.core = Math.min(MAX_CORE, effectOwnerPlayer.core + effect.value); logMessage(`${ownerName} は効果で ${effect.value} コア獲得。`, true); break;
                 case "damageUnit":
                     if (targetEntity && targetEntity.type === "unit") {
-                        targetEntity.currentHealth -= effect.value;
-                        logMessage(`${targetEntity.name} は効果で ${effect.value} ダメージ。残り体力 ${targetEntity.currentHealth}`, true);
-                        const targetOwner = players.find(p => p.fieldUnits.some(u => u.uuid === targetEntity.uuid));
-                        if (targetOwner) { checkAndDestroyUnit(targetEntity, targetOwner); }
-                    } else { logMessage(`効果対象のユニットがいません。(${effect.action})`, true); }
+                        targetEntity.currentHealth -= effect.value; logMessage(`${tgName} は効果で ${effect.value} ダメージ。残り体力 ${targetEntity.currentHealth}`, true);
+                        const targetOwner = players.find(p => p.fieldUnits.some(u => u.uuid === targetEntity.uuid)); if (targetOwner) checkAndDestroyUnit(targetEntity, targetOwner);
+                    } else logMessage(`効果対象のユニットがいません。(${efAction})`, true);
                     break;
                 case "damagePlayer":
                     actualTargetPlayer = (effect.target === "opponentPlayer") ? players.find(p => p.id !== effectOwnerPlayer.id) : effectOwnerPlayer;
-                    if (actualTargetPlayer) {
-                        actualTargetPlayer.lp -= effect.value;
-                        logMessage(`${actualTargetPlayer.name} は効果で ${effect.value} ダメージ。残りLP ${actualTargetPlayer.lp}`, true);
-                    }
+                    if (actualTargetPlayer) { actualTargetPlayer.lp -= effect.value; logMessage(`${actualTargetPlayer.name} は効果で ${effect.value} ダメージ。残りLP ${actualTargetPlayer.lp}`, true); }
                     break;
                 case "healPlayer":
                     actualTargetPlayer = (effect.target === "self" || effect.target === "player") ? effectOwnerPlayer : players.find(p => p.id !== effectOwnerPlayer.id);
-                    if (actualTargetPlayer) {
-                        actualTargetPlayer.lp += effect.value;
-                        logMessage(`${actualTargetPlayer.name} は効果で ${effect.value} LP回復。残りLP ${actualTargetPlayer.lp}`, true);
-                    }
+                    if (actualTargetPlayer) { actualTargetPlayer.lp += effect.value; logMessage(`${actualTargetPlayer.name} は効果で ${effect.value} LP回復。残りLP ${actualTargetPlayer.lp}`, true); }
                     break;
                 case "destroyUnit":
                      if (targetEntity && targetEntity.type === "unit") {
-                        logMessage(`${targetEntity.name} は効果「${sourceCard.name}」で破壊された。`, true);
-                        targetEntity.currentHealth = 0;
-                        const targetOwner = players.find(p => p.fieldUnits.some(u => u.uuid === targetEntity.uuid));
-                        if (targetOwner) { checkAndDestroyUnit(targetEntity, targetOwner); }
+                        logMessage(`${tgName} は効果「${scName}」で破壊された。`, true); targetEntity.currentHealth = 0;
+                        const targetOwner = players.find(p => p.fieldUnits.some(u => u.uuid === targetEntity.uuid)); if (targetOwner) checkAndDestroyUnit(targetEntity, targetOwner);
                     } else if (targetEntity && targetEntity.type === "trap" ) {
                         const trapOwner = players.find(p => p.fieldTrap && p.fieldTrap.uuid === targetEntity.uuid);
-                        if (trapOwner) {
-                            trapOwner.discardPile.push(trapOwner.fieldTrap);
-                            trapOwner.fieldTrap = null;
-                            logMessage(`セットされていた ${targetEntity.name} は効果「${sourceCard.name}」で破壊された。`, true);
-                        }
-                    } else { logMessage(`効果対象のユニットまたはトラップがいません。(${effect.action})`, true); }
+                        if (trapOwner) { trapOwner.discardPile.push(trapOwner.fieldTrap); trapOwner.fieldTrap = null; logMessage(`セットされていた ${tgName} は効果「${scName}」で破壊された。`, true); }
+                    } else logMessage(`効果対象のユニットまたはトラップがいません。(${efAction})`, true);
                     break;
             }
             updateAllUI(); checkWinCondition();
@@ -1296,29 +1109,19 @@
             return null;
         }
         function checkWinCondition() {
-            const player1 = players[0];
-            const player2 = players[1];
-            let winner = null;
-            if (player1.lp <= 0 && player2.lp <= 0) {
-                logMessage("引き分け！両プレイヤーのLPが0以下になりました。", true); winner = "draw";
-            } else if (player1.lp <= 0) {
-                logMessage(`${player2.name} の勝利！ (${player1.name} のLPが0)`, true); winner = player2;
-            } else if (player2.lp <= 0) {
-                logMessage(`${player1.name} の勝利！ (${player2.name} のLPが0)`, true); winner = player1;
-            }
+            const player1 = players[0]; const player2 = players[1]; let winner = null;
+            if (player1.lp <= 0 && player2.lp <= 0) { logMessage("引き分け！両プレイヤーのLPが0以下になりました。", true); winner = "draw"; }
+            else if (player1.lp <= 0) { logMessage(`${player2.name} の勝利！ (${player1.name} のLPが0)`, true); winner = player2; }
+            else if (player2.lp <= 0) { logMessage(`${player1.name} の勝利！ (${player2.name} のLPが0)`, true); winner = player1; }
             if (winner && gamePhase !== "gameOver") {
                 gamePhase = "gameOver";
-                if (winner === "draw") { showMessage("引き分け！"); }
-                else { showMessage(`${winner.name} の勝利！`); }
-                updateAllUI();
-                return true;
+                if (winner === "draw") showMessage("引き分け！"); else showMessage(`${winner.name} の勝利！`);
+                updateAllUI(); return true;
             }
             return false;
         }
         
-        document.addEventListener('DOMContentLoaded', () => {
-            initGame();
-        });
+        document.addEventListener('DOMContentLoaded', () => { initGame(); });
     </script>
 </body>
 </html>
