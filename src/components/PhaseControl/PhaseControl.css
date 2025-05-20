@@ -1,0 +1,65 @@
+.phase-control {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  padding: 1rem;
+  border-radius: 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid #ffd700;
+}
+
+.current-phase {
+  font-size: 1.2rem;
+  color: #ffd700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.phase-buttons {
+  display: flex;
+  gap: 1rem;
+}
+
+.phase-buttons button {
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #4a4a4a, #2a2a2a);
+  border: 1px solid #ffd700;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.phase-buttons button:hover {
+  background: linear-gradient(135deg, #5a5a5a, #3a3a3a);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+}
+
+.phase-buttons button:active {
+  transform: translateY(0);
+}
+
+.turn-indicator {
+  font-size: 1.1rem;
+  color: #44ff44;
+  text-shadow: 0 0 10px rgba(68, 255, 68, 0.5);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
