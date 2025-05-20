@@ -305,6 +305,52 @@
         </div>
     </div>
 
+    <div id="gameArea" style="display: none;" class="container mx-auto">
+        <div class="flex justify-between mb-4">
+            <div>
+                <span id="turnDisplay" class="font-bold"></span>
+                <span id="phaseDisplay" class="ml-4"></span>
+            </div>
+            <button id="endTurnBtn" class="bg-blue-500 text-white px-4 py-2 rounded">
+                ターン終了
+            </button>
+        </div>
+
+        <div id="opponentArea" class="player-area mb-8">
+            <div class="flex justify-between mb-4">
+                <div>
+                    <span class="font-bold" id="opponentName"></span>
+                    <span class="ml-4">LP: <span id="opponentLP"></span></span>
+                </div>
+                <div>デッキ: <span id="opponentDeckCount"></span>枚</div>
+            </div>
+            
+            <div class="field-zone mb-4" id="opponentField">
+                <div class="field-zone-label">フィールド</div>
+            </div>
+            
+            <div class="hand-zone" id="opponentHand"></div>
+        </div>
+
+        <div id="playerArea" class="player-area">
+            <div class="flex justify-between mb-4">
+                <div>
+                    <span class="font-bold" id="playerName"></span>
+                    <span class="ml-4">LP: <span id="playerLP"></span></span>
+                </div>
+                <div>デッキ: <span id="playerDeckCount"></span>枚</div>
+            </div>
+            
+            <div class="field-zone mb-4" id="playerField">
+                <div class="field-zone-label">フィールド</div>
+            </div>
+            
+            <div class="hand-zone" id="playerHand"></div>
+        </div>
+
+        <div class="log-area" id="gameLog"></div>
+    </div>
+
     <script>
         const MAX_HAND_SIZE = 7; const INITIAL_LP = 10000; const INITIAL_CORE = 5; const MAX_CORE = 10; const MAX_RECOVERY_CORE = 8;
         const CORE_PER_TURN = 3; const DECK_OUT_DAMAGE = 1000; const MAX_UNITS_ON_FIELD = 5;
@@ -1271,23 +1317,56 @@
         setInterval(fetchAndDisplayRooms, 5000);
 
         // 更新ボタンのイベントリスナー
-        document.getElementById('refreshRoomsBtn').addEventListener('click', fetchAndDisplayRooms);
+        document.getElementById('refreshRoomsBtn').addEventListener('click', fetchAndDisplayRooms);        // WebSocketメッセージ送信関数
+        function sendWebSocketMessage(type, data) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: type,
+                    ...data,
+                    clientId: clientId
+                }));
+            } else {
+                showMessage('サーバーとの接続が切断されています', true);
+            }
+        }
 
         // ルーム参加関数
         function joinRoom(roomId) {
-            ws.send(JSON.stringify({
-                type: 'join_room',
-                roomId: roomId
-            }));
+            sendWebSocketMessage('join_room', { roomId: roomId });
         }
 
-        // WebSocket接続
+        // ゲームアクション送信関数
+        function sendGameAction(action, actionData) {
+            if (!currentRoomId) {
+                showMessage('ルームに参加していません', true);
+                return;
+            }
+            sendWebSocketMessage('game_action', {
+                action: action,
+                data: actionData,
+                roomId: currentRoomId
+            });
+        }
+
+        // WebSocket接続とグローバル変数
         const ws = new WebSocket('ws://localhost:3000');
         let currentRoomId = null;
-        let playerId = null;
+        const clientId = generateUUID(); // 一意のクライアントID
+
+        // UUID生成関数
+        function generateUUID() {
+            return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+                (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+            );
+        }
 
         ws.onopen = () => {
             console.log('WebSocket接続が確立されました');
+            // 接続時に自分のIDを送信
+            ws.send(JSON.stringify({
+                type: 'client_init',
+                clientId: clientId
+            }));
         };
 
         ws.onmessage = (event) => {
@@ -1340,16 +1419,11 @@
                     showMessage('相手プレイヤーが切断しました');
                     break;
             }
-        }
-
-        // ルーム作成ボタンのイベントハンドラ
+        }        // ルーム作成ボタンのイベントハンドラ
         document.getElementById('createRoomBtn').addEventListener('click', () => {
             const roomName = document.getElementById('roomNameInput').value.trim();
             if (roomName) {
-                ws.send(JSON.stringify({
-                    type: 'create_room',
-                    roomName: roomName
-                }));
+                sendWebSocketMessage('create_room', { roomName: roomName });
             } else {
                 showMessage('ルーム名を入力してください');
             }
@@ -1415,7 +1489,305 @@
         // ターン終了
         function endTurn() {
             sendGameAction('end_turn', {});
+        }        // ゲーム状態管理
+        let gameState = null;
+        let selectedCard = null;
+        let selectedFieldIndex = null;
+        let isMyTurn = false;
+
+        // WebSocket接続の初期化
+        function initializeWebSocket() {
+            ws = new WebSocket('ws://localhost:3000');
+            
+            ws.onopen = () => {
+                console.log('WebSocket接続が確立されました');
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                handleWebSocketMessage(message);
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket接続が閉じられました');
+                // 再接続ロジックを追加する場合はここに実装
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocketエラー:', error);
+                showMessage('WebSocket接続エラー', true);
+            };
         }
+
+        // WebSocketメッセージハンドラー
+        function handleWebSocketMessage(message) {
+            switch (message.type) {
+                case 'game_start':
+                    handleGameStart(message.gameState);
+                    break;
+                case 'turn_changed':
+                    handleTurnChanged(message);
+                    break;
+                case 'monster_summoned':
+                    handleMonsterSummoned(message);
+                    break;
+                case 'attack_executed':
+                    handleAttackExecuted(message);
+                    break;
+                case 'game_over':
+                    handleGameOver(message);
+                    break;
+                case 'error':
+                    showMessage(message.message, true);
+                    break;
+            }
+            updateGameUI();
+        }
+
+        // ゲーム開始処理
+        function handleGameStart(newGameState) {
+            gameState = newGameState;
+            document.getElementById('roomForm').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            isMyTurn = gameState.currentPlayerIndex === gameState.players.findIndex(p => p.id === playerId);
+            updateGameUI();
+        }
+
+        // ターン変更処理
+        function handleTurnChanged(message) {
+            gameState.currentPlayerIndex = gameState.players.findIndex(p => p.id === message.currentPlayerId);
+            gameState.turnCount = message.turnCount;
+            isMyTurn = message.currentPlayerId === playerId;
+            selectedCard = null;
+            selectedFieldIndex = null;
+            updateGameUI();
+            
+            if (isMyTurn) {
+                showMessage('あなたのターンです');
+            }
+        }
+
+        // モンスター召喚処理
+        function handleMonsterSummoned(message) {
+            gameState = message.gameState;
+            const summoningPlayer = gameState.players.find(p => p.id === message.playerId);
+            addToGameLog(`${summoningPlayer.name}が${message.monster.name}を召喚しました`);
+            updateGameUI();
+        }
+
+        // 攻撃実行処理
+        function handleAttackExecuted(message) {
+            gameState = message.gameState;
+            const attacker = gameState.players.find(p => p.id === message.attackerId);
+            addToGameLog(`${attacker.name}の攻撃で${message.damage}ダメージを与えました`);
+            updateGameUI();
+        }
+
+        // ゲーム終了処理
+        function handleGameOver(message) {
+            gameState = message.gameState;
+            const winner = gameState.players.find(p => p.id === message.winnerId);
+            showMessage(`ゲーム終了！${winner.name}の勝利です！`);
+            // ゲーム終了時の追加処理をここに実装
+        }
+
+        // ゲームUIの更新
+        function updateGameUI() {
+            if (!gameState) return;
+            
+            const playerIndex = gameState.players.findIndex(p => p.id === playerId);
+            const player = gameState.players[playerIndex];
+            const opponent = gameState.players[1 - playerIndex];
+            
+            // プレイヤー情報の更新
+            document.getElementById('playerName').textContent = player.name;
+            document.getElementById('playerLP').textContent = player.lp;
+            document.getElementById('playerDeckCount').textContent = player.deck;
+            
+            document.getElementById('opponentName').textContent = opponent.name;
+            document.getElementById('opponentLP').textContent = opponent.lp;
+            document.getElementById('opponentDeckCount').textContent = opponent.deck;
+            
+            // ターン情報の更新
+            document.getElementById('turnDisplay').textContent = `ターン ${gameState.turnCount}`;
+            document.getElementById('playerArea').classList.toggle('active-player', isMyTurn);
+            document.getElementById('endTurnBtn').disabled = !isMyTurn;
+            
+            // フィールドとハンドの更新
+            updateFieldZone('playerField', player.field.monsters);
+            updateFieldZone('opponentField', opponent.field.monsters);
+            updateHandZone('playerHand', player.hand);
+            updateHandZone('opponentHand', opponent.hand);
+        }
+
+        // フィールドゾーンの更新
+        function updateFieldZone(elementId, monsters) {
+            const fieldElement = document.getElementById(elementId);
+            fieldElement.innerHTML = '<div class="field-zone-label">フィールド</div>';
+            
+            monsters.forEach((monster, index) => {
+                const cardElement = monster ? createCardElement(monster) : createEmptyCardSlot();
+                cardElement.dataset.index = index;
+                if (elementId === 'playerField') {
+                    cardElement.onclick = () => handleFieldCardClick(index);
+                }
+                fieldElement.appendChild(cardElement);
+            });
+        }
+
+        // ハンドゾーンの更新
+        function updateHandZone(elementId, cards) {
+            const handElement = document.getElementById(elementId);
+            handElement.innerHTML = '';
+            
+            cards.forEach((card, index) => {
+                const cardElement = card.hidden ? createHiddenCard() : createCardElement(card);
+                cardElement.dataset.index = index;
+                if (elementId === 'playerHand') {
+                    cardElement.onclick = () => handleHandCardClick(index);
+                }
+                handElement.appendChild(cardElement);
+            });
+        }
+
+        // カード要素の作成
+        function createCardElement(card) {
+            const div = document.createElement('div');
+            div.className = 'card';
+            div.innerHTML = `
+                <div class="card-header">
+                    <div class="card-name">${card.name}</div>
+                    <div class="card-type">${card.type}</div>
+                </div>
+                <div class="card-image-placeholder">
+                    ${card.type === CARD_TYPES.MONSTER ? '[モンスター]' : '[魔法/罠]'}
+                </div>
+                ${card.type === CARD_TYPES.MONSTER ? `
+                    <div class="card-stats">
+                        <span>ATK: ${card.attack}</span>
+                        <span>DEF: ${card.defense}</span>
+                    </div>
+                ` : ''}
+                <div class="card-description">${card.effect}</div>
+            `;
+            return div;
+        }
+
+        // 空のカードスロットの作成
+        function createEmptyCardSlot() {
+            const div = document.createElement('div');
+            div.className = 'card empty';
+            div.innerHTML = '<div class="card-image-placeholder">[空]</div>';
+            return div;
+        }
+
+        // 裏向きカードの作成
+        function createHiddenCard() {
+            const div = document.createElement('div');
+            div.className = 'card hidden';
+            div.innerHTML = '<div class="card-image-placeholder">[?]</div>';
+            return div;
+        }
+
+        // ハンドのカードクリック処理
+        function handleHandCardClick(index) {
+            if (!isMyTurn) return;
+            
+            selectedCard = {
+                index: index,
+                location: 'hand'
+            };
+            
+            const card = gameState.players.find(p => p.id === playerId).hand[index];
+            if (card.type === CARD_TYPES.MONSTER) {
+                showMessage('召喚する場所を選択してください');
+            }
+        }
+
+        // フィールドのカードクリック処理
+        function handleFieldCardClick(index) {
+            if (!isMyTurn) return;
+            
+            if (selectedCard && selectedCard.location === 'hand') {
+                const card = gameState.players.find(p => p.id === playerId).hand[selectedCard.index];
+                
+                if (card.type === CARD_TYPES.MONSTER) {
+                    ws.send(JSON.stringify({
+                        type: 'game_action',
+                        action: 'summon',
+                        handIndex: selectedCard.index,
+                        fieldIndex: index
+                    }));
+                }
+                
+                selectedCard = null;
+            } else if (!selectedCard) {
+                const monster = gameState.players.find(p => p.id === playerId).field.monsters[index];
+                if (monster) {
+                    selectedCard = {
+                        index: index,
+                        location: 'field'
+                    };
+                    showMessage('攻撃対象を選択してください');
+                }
+            }
+        }
+
+        // ターン終了ボタンクリック処理
+        document.getElementById('endTurnBtn').onclick = () => {
+            if (isMyTurn) {
+                ws.send(JSON.stringify({
+                    type: 'game_action',
+                    action: 'end_turn'
+                }));
+            }
+        };
+
+        // メッセージ表示
+        function showMessage(message, isError = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isError ? 'error' : ''}`;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.classList.add('show');
+            }, 100);
+            
+            setTimeout(() => {
+                messageDiv.classList.remove('show');
+                setTimeout(() => {
+                    messageDiv.remove();
+                }, 300);
+            }, 3000);
+        }
+
+        // ゲームログの追加
+        function addToGameLog(message) {
+            const logElement = document.getElementById('gameLog');
+            const logEntry = document.createElement('div');
+            logEntry.textContent = message;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        // ページ読み込み時の初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeWebSocket();
+            
+            // ルーム作成ボタンのイベントハンドラー
+            document.getElementById('createRoomBtn').onclick = () => {
+                const roomName = document.getElementById('roomNameInput').value.trim();
+                if (roomName) {
+                    ws.send(JSON.stringify({
+                        type: 'create_room',
+                        roomName: roomName
+                    }));
+                } else {
+                    showMessage('ルーム名を入力してください', true);
+                }
+            };
+        });
     </script>
 </body>
 </html>
