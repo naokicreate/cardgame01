@@ -155,12 +155,75 @@
             box-shadow: 0 0 15px rgba(255,255,255,0.3);
         }
         .core-display span { display: inline-block; margin-right: 2px; font-size: 1.2rem; }
+
+        .message {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background-color: #4CAF50;
+            color: white;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .message.error {
+            background-color: #f44336;
+        }
+        
+        .message.show {
+            opacity: 1;
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-4 md:p-8">
 
-    <div class="container mx-auto max-w-6xl">
-        <h1 class="text-3xl font-bold text-center mb-6 text-gray-700">カードゲームバトル</h1>
+    <div id="roomForm" class="container mx-auto px-4 py-8">
+        <div class="max-w-lg mx-auto">
+            <h1 class="text-3xl font-bold text-center mb-8">カードゲーム - ルーム選択</h1>
+            
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">新しいルームを作成</h2>
+                <div class="flex gap-4">
+                    <input type="text" id="roomNameInput" placeholder="ルーム名"
+                        class="flex-1 px-4 py-2 border rounded focus:outline-none focus:border-blue-500">
+                    <button id="createRoomBtn"
+                        class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600">
+                        作成
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">ルームに参加</h2>
+                <div class="flex gap-4">
+                    <input type="text" id="roomIdInput" placeholder="ルームID"
+                        class="flex-1 px-4 py-2 border rounded focus:outline-none focus:border-blue-500">
+                    <button id="joinRoomBtn"
+                        class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
+                        参加
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">アクティブなルーム</h2>
+                    <button id="refreshRoomsBtn"
+                        class="text-blue-500 hover:text-blue-600">
+                        更新
+                    </button>
+                </div>
+                <div id="roomList" class="space-y-4">
+                    <!-- ルーム一覧がここに動的に追加されます -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameContainer" class="container mx-auto px-4 py-8" style="display: none;">
         <div id="player2-area" class="player-area mb-4">
             <div class="flex justify-between items-center mb-2">
                 <h2 id="player2-name" class="text-xl font-semibold text-gray-600">プレイヤー2</h2>
@@ -367,7 +430,22 @@
             changePhase("attack");
         };
 
-        function showMessage(message) { modalMessageText.textContent = message; messageModal.style.display = "flex"; }
+        function showMessage(message, isError = false) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${isError ? 'error' : ''}`;
+            messageEl.textContent = message;
+            document.body.appendChild(messageEl);
+            
+            // アニメーション用のタイミング調整
+            setTimeout(() => messageEl.classList.add('show'), 100);
+            
+            // 3秒後にメッセージを消す
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+                setTimeout(() => messageEl.remove(), 300);
+            }, 3000);
+        }
+
         function logMessage(message, isBattleLog = false) {
             const p = document.createElement('p'); p.textContent = message; gameLogEl.appendChild(p);
             gameLogEl.scrollTop = gameLogEl.scrollHeight;
@@ -972,7 +1050,7 @@
             } else {
                 // 新しいブロッカーを選択
                 selectedBlockerUUID = blockerCard.uuid;
-                const cardElInModal = document.querySelector(`#blockerSelectionArea .card[data-uuid="${blockerCard.uuid}"]`);
+                const cardElInModal = document.queryElement(`#blockerSelectionArea .card[data-uuid="${blockerCard.uuid}"]`);
                 if (cardElInModal) cardElInModal.classList.add('selected-for-action');
                 
                 const cardElOnField = defenderPlayer.playerElements.fieldUnitsEl.querySelector(`.card[data-uuid="${blockerCard.uuid}"]`);
@@ -991,7 +1069,7 @@
                 let damageToBlocker = attackerUnit.attack; let damageToAttacker = blockerUnit.attack;
                 const attackerHasPoison = attackerUnit.effects.some(e => e.type === "keyword" && e.name === "毒");
                 const blockerHasPoison = blockerUnit.effects.some(e => e.type === "keyword" && e.name === "毒");
-                blockerUnit.currentHealth -= damageToBlocker; logMessage(`${blockerUnit.name} は ${damageToBlocker} ダメージ。(残体力 ${blockerUnit.currentHealth})`, true);
+                blockerUnit.currentHealth -= damageToBlocker; logMessage(`${blockerUnit.name} は ${damageToBlocker} ダメージ。(残体力 ${blockerUnit.name}）`, true);
                 attackerUnit.currentHealth -= damageToAttacker; logMessage(`${attackerUnit.name} は反撃で ${damageToAttacker} ダメージ。(残体力 ${attackerUnit.currentHealth})`, true);
                 if (attackerHasPoison && damageToBlocker > 0 && blockerUnit.currentHealth > 0) { logMessage(`${attackerUnit.name} の毒効果！ ${blockerUnit.name} は破壊。`, true); blockerUnit.currentHealth = 0; }
                 if (blockerHasPoison && damageToAttacker > 0 && attackerUnit.currentHealth > 0) { logMessage(`${blockerUnit.name} の毒効果！ ${attackerUnit.name} は破壊。`, true); attackerUnit.currentHealth = 0; }
@@ -1121,7 +1199,223 @@
             return false;
         }
         
-        document.addEventListener('DOMContentLoaded', () => { initGame(); });
+        document.addEventListener('DOMContentLoaded', () => { 
+            initGame(); 
+            fetchAndDisplayRooms(); // ページ読み込み時にルーム一覧を表示
+        });
+
+        // ルーム一覧を取得して表示する関数
+        async function fetchAndDisplayRooms() {
+            try {
+                console.log('ルーム一覧を取得中...');
+                const response = await fetch('http://localhost:3000/api/rooms');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const rooms = await response.json();
+                console.log('取得したルーム一覧:', rooms);
+
+                const roomListEl = document.getElementById('roomList');
+                if (!roomListEl) {
+                    console.error('roomList 要素が見つかりません');
+                    return;
+                }
+                roomListEl.innerHTML = '';
+
+                if (rooms.length === 0) {
+                    roomListEl.innerHTML = '<p class="text-gray-500 text-center py-4">現在アクティブなルームはありません</p>';
+                    return;
+                }
+
+                rooms.forEach(room => {
+                    console.log('表示するルーム:', room);
+                    const roomEl = document.createElement('div');
+                    roomEl.className = 'bg-white p-4 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer mb-2';
+                    roomEl.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h4 class="font-semibold">${room.name || 'No Name'}</h4>
+                                <p class="text-sm text-gray-600">プレイヤー: ${room.players || 0}/${room.maxPlayers || 2}</p>
+                                <p class="text-xs text-gray-500">ルームID: ${room.id}</p>
+                            </div>
+                            <span class="px-3 py-1 rounded text-sm ${
+                                room.status === 'フル' 
+                                    ? 'bg-red-100 text-red-800' 
+                                    : 'bg-green-100 text-green-800'
+                            }">${room.status || '参加可能'}</span>
+                        </div>
+                    `;
+
+                    if (room.status !== 'フル') {
+                        roomEl.onclick = () => {
+                            document.getElementById('roomIdInput').value = room.id;
+                            joinRoom(room.id);
+                        };
+                    }
+
+                    roomListEl.appendChild(roomEl);
+                });
+
+                // ルーム一覧の更新後にコンソールに表示
+                console.log('ルーム一覧の表示を完了しました');
+            } catch (error) {
+                console.error('ルーム一覧の取得に失敗しました:', error);
+                const roomListEl = document.getElementById('roomList');
+                if (roomListEl) {
+                    roomListEl.innerHTML = '<p class="text-red-500 text-center py-4">ルーム一覧の取得に失敗しました。</p>';
+                }
+            }
+        }
+
+        // 定期的なルーム一覧の更新
+        setInterval(fetchAndDisplayRooms, 5000);
+
+        // 更新ボタンのイベントリスナー
+        document.getElementById('refreshRoomsBtn').addEventListener('click', fetchAndDisplayRooms);
+
+        // ルーム参加関数
+        function joinRoom(roomId) {
+            ws.send(JSON.stringify({
+                type: 'join_room',
+                roomId: roomId
+            }));
+        }
+
+        // WebSocket接続
+        const ws = new WebSocket('ws://localhost:3000');
+        let currentRoomId = null;
+        let playerId = null;
+
+        ws.onopen = () => {
+            console.log('WebSocket接続が確立されました');
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            handleServerMessage(data);
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket接続が切断されました');
+            showMessage('サーバーとの接続が切断されました');
+        };
+
+        // サーバーからのメッセージハンドラ
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'room_list_update':
+                    fetchAndDisplayRooms();
+                    break;
+                      case 'room_created':
+                    currentRoomId = data.roomId;
+                    showMessage(`ルーム「${data.roomName}」が作成されました。\nルームID: ${data.roomId}`);
+                    console.log('ルーム作成成功:', data);
+                    // 少し遅延を入れてからルーム一覧を更新
+                    setTimeout(() => {
+                        fetchAndDisplayRooms();
+                    }, 500);
+                    break;
+
+                case 'player_joined':
+                    if (data.playerCount === 2) {
+                        document.getElementById('roomForm').style.display = 'none';
+                        document.getElementById('gameContainer').style.display = 'block';
+                    }
+                    showMessage(`プレイヤーが参加しました（${data.playerCount}/2）`);
+                    break;
+
+                case 'game_start':
+                    initGame(data.gameState);
+                    break;
+
+                case 'game_update':
+                    updateGameState(data.gameState);
+                    break;
+
+                case 'error':
+                    showMessage(data.message);
+                    break;
+
+                case 'player_disconnected':
+                    showMessage('相手プレイヤーが切断しました');
+                    break;
+            }
+        }
+
+        // ルーム作成ボタンのイベントハンドラ
+        document.getElementById('createRoomBtn').addEventListener('click', () => {
+            const roomName = document.getElementById('roomNameInput').value.trim();
+            if (roomName) {
+                ws.send(JSON.stringify({
+                    type: 'create_room',
+                    roomName: roomName
+                }));
+            } else {
+                showMessage('ルーム名を入力してください');
+            }
+        });
+
+        // ルーム参加ボタンのイベントハンドラ
+        document.getElementById('joinRoomBtn').addEventListener('click', () => {
+            const roomId = document.getElementById('roomIdInput').value.trim();
+            if (roomId) {
+                ws.send(JSON.stringify({
+                    type: 'join_room',
+                    roomId: roomId
+                }));
+            } else {
+                showMessage('ルームIDを入力してください');
+            }
+        });
+
+        // ゲーム状態の更新
+        function updateGameState(newState) {
+            // ゲームの状態を更新
+            players = newState.players;
+            currentPlayerIndex = newState.currentPlayerIndex;
+            turnCount = newState.turnCount;
+            gamePhase = newState.gamePhase;
+
+            // UI更新
+            updateAllUI();
+
+            // 最後のアクションに基づいてメッセージを表示
+            if (newState.lastAction) {
+                logMessage(newState.lastAction.message);
+            }
+        }
+
+        // サーバーにアクションを送信
+        function sendGameAction(action, actionData) {
+            if (!currentRoomId) return;
+            ws.send(JSON.stringify({
+                type: 'game_action',
+                roomId: currentRoomId,
+                action: action,
+                ...actionData
+            }));
+        }
+
+        // カードプレイ処理
+        function playCard(cardId, targetId = null) {
+            sendGameAction('play_card', {
+                cardId: cardId,
+                targetId: targetId
+            });
+        }
+
+        // 攻撃処理
+        function attack(attackerId, targetId) {
+            sendGameAction('attack', {
+                attackerId: attackerId,
+                targetId: targetId
+            });
+        }
+
+        // ターン終了
+        function endTurn() {
+            sendGameAction('end_turn', {});
+        }
     </script>
 </body>
 </html>
