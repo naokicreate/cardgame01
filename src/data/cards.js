@@ -229,7 +229,5 @@ export const cards = [
       { type: EFFECT_TYPES.KEYWORD, name: KEYWORDS.CHARGE }
     ],
     description: '挑発と速攻持ち。場に出た時、自分のLPを1000回復する。',
-    illust_url: 'https://placehold.co/100x140?text=Knight'
-  }
-];
+    illust_url: 'https://placehold.co/100x140?text=Knight'  }
 ];

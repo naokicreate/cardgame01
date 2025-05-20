@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import './Card.css';
 
 const Card = ({ card, onClick, onAttack, isPlayable }) => {
+  const [showDetails, setShowDetails] = useState(false);
   const handleClick = (e) => {
     e.preventDefault();
     if (isPlayable) {
