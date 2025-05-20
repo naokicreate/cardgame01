@@ -1,0 +1,65 @@
+.game-room {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.game-info {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.turn-indicator {
+  font-size: 1.2em;
+  margin-top: 10px;
+}
+
+.your-turn {
+  color: #2575fc;
+  font-weight: bold;
+}
+
+.opponents {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 40px;
+}
+
+.opponent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 20px;
+}
+
+.player-info {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.opponent-cards {
+  display: flex;
+  justify-content: center;
+}
+
+.player-hand {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.player-hand h3 {
+  margin-bottom: 15px;
+}
+
+.cards {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.turn-instructions {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 1.2em;
+  color: #2575fc;
+}
