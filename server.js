@@ -4,6 +4,13 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { 
+  GAME_PHASES,
+  GAME_CONSTANTS,
+  createGameState,
+  shuffleArray,
+  dealInitialCards
+} = require('./server/gameState');
 
 const app = express();
 app.use(cors());
@@ -20,7 +27,151 @@ const io = socketIo(server, {
   pingTimeout: 60000
 });
 
-// ソケット接続のデバッグログ
+// ゲームルームを管理するオブジェクト
+const gameRooms = new Map();
+// プレイヤーのデッキを一時的に保存するオブジェクト
+const playerDecks = new Map();
+
+io.on('connection', (socket) => {
+  console.log('New client connected:', socket.id);
+
+  // プレイヤーがデッキを準備
+  socket.on('prepareDeck', ({ deck }) => {
+    if (deck.length === GAME_CONSTANTS.DECK_SIZE) {
+      playerDecks.set(socket.id, shuffleArray(deck));
+      socket.emit('deckPrepared', { success: true });
+    } else {
+      socket.emit('deckPrepared', { 
+        success: false, 
+        error: `デッキは${GAME_CONSTANTS.DECK_SIZE}枚である必要があります。` 
+      });
+    }
+  });
+
+  // 部屋を作成
+  socket.on('createRoom', ({ username }) => {
+    if (!playerDecks.has(socket.id)) {
+      socket.emit('error', { message: 'デッキを準備してください。' });
+      return;
+    }
+
+    const roomId = Math.random().toString(36).substring(2, 8);
+    socket.join(roomId);
+    
+    gameRooms.set(roomId, {
+      id: roomId,
+      players: [{
+        id: socket.id,
+        username,
+      }],
+      gameState: null,
+      isStarted: false
+    });
+    
+    socket.emit('roomCreated', { roomId, playerId: socket.id });
+  });
+
+  // 部屋に参加
+  socket.on('joinRoom', ({ roomId, username }) => {
+    if (!playerDecks.has(socket.id)) {
+      socket.emit('error', { message: 'デッキを準備してください。' });
+      return;
+    }
+
+    const room = gameRooms.get(roomId);
+    if (!room) {
+      socket.emit('error', { message: '部屋が見つかりません。' });
+      return;
+    }
+    
+    if (room.players.length >= 2) {
+      socket.emit('error', { message: '部屋が満員です。' });
+      return;
+    }
+
+    socket.join(roomId);
+    room.players.push({
+      id: socket.id,
+      username
+    });
+
+    // ゲーム状態を初期化
+    if (room.players.length === 2) {
+      const [player1, player2] = room.players;
+      const gameState = createGameState(player1.id, player2.id);
+      
+      // 各プレイヤーのデッキを設定
+      gameState.players[player1.id].deck = playerDecks.get(player1.id);
+      gameState.players[player2.id].deck = playerDecks.get(player2.id);
+      
+      // 初期手札を配る
+      room.gameState = dealInitialCards(gameState);
+      room.isStarted = true;
+
+      // 各プレイヤーに初期状態を送信
+      io.in(roomId).emit('gameStart', {
+        gameState: room.gameState,
+        players: room.players
+      });
+    }
+
+    io.in(roomId).emit('playerJoined', { 
+      players: room.players
+    });
+  });
+
+  // ゲームアクション
+  socket.on('gameAction', ({ roomId, action, data }) => {
+    const room = gameRooms.get(roomId);
+    if (!room || !room.isStarted) return;
+
+    const gameState = room.gameState;
+    if (gameState.currentPlayer !== socket.id) {
+      socket.emit('error', { message: 'あなたのターンではありません。' });
+      return;
+    }
+
+    let newGameState;
+    switch (action) {
+      case 'playCard':
+        // カードプレイの処理
+        break;
+      case 'attack':
+        // 攻撃の処理
+        break;
+      case 'endPhase':
+        // フェーズ終了の処理
+        break;
+      case 'endTurn':
+        // ターン終了の処理
+        break;
+    }
+
+    if (newGameState) {
+      room.gameState = newGameState;
+      io.in(roomId).emit('gameStateUpdate', { gameState: newGameState });
+    }
+  });
+
+  // 切断時の処理
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+    playerDecks.delete(socket.id);
+
+    // プレイヤーが参加していた部屋を検索して更新
+    for (const [roomId, room] of gameRooms.entries()) {
+      const playerIndex = room.players.findIndex(p => p.id === socket.id);
+      if (playerIndex !== -1) {
+        io.in(roomId).emit('playerLeft', { 
+          playerId: socket.id,
+          username: room.players[playerIndex].username
+        });
+        gameRooms.delete(roomId);
+        break;
+      }
+    }
+  });
+});
 io.engine.on("connection_error", (err) => {
   console.log("接続エラー:", err.req, err.code, err.message, err.context);
 });
