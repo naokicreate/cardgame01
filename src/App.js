@@ -4,8 +4,7 @@ import './App.css';
 import GameRoom from './components/GameRoom';
 import Lobby from './components/Lobby';
 import { GameProvider } from './context/GameContext';
-import GameField from './components/GameField/GameField';
-import PhaseControl from './components/PhaseControl/PhaseControl';
+import Game from './components/Game';
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -17,6 +16,7 @@ function App() {
   const [hand, setHand] = useState([]);
   const [currentPlayer, setCurrentPlayer] = useState('');
   const [error, setError] = useState('');
+  const [gameState, setGameState] = useState(null);
 
   useEffect(() => {
     // ソケット接続を初期化
@@ -37,9 +37,7 @@ function App() {
       setError(''); // エラーメッセージをクリア
     });
     
-    setSocket(newSocket);
-
-    // イベントリスナーを設定
+    setSocket(newSocket);    // イベントリスナーを設定
     newSocket.on('roomCreated', ({ roomId, playerId }) => {
       setRoomId(roomId);
       setPlayerId(playerId);
@@ -60,14 +58,15 @@ function App() {
       setScreen('readyToStart');
     });
 
-    newSocket.on('gameStarted', ({ currentPlayer }) => {
-      setCurrentPlayer(currentPlayer);
+    newSocket.on('gameStart', ({ gameState, players }) => {
+      setGameState(gameState);
+      setPlayers(players);
       setScreen('gameRoom');
     });
 
-    newSocket.on('dealCards', ({ hand, currentPlayer }) => {
-      setHand(hand);
-      setCurrentPlayer(currentPlayer);
+    newSocket.on('gameStateUpdate', ({ gameState }) => {
+      console.log('Game state update received:', gameState);
+      setGameState(gameState);
     });
 
     newSocket.on('cardPlayed', ({ playerId, card, nextPlayer }) => {
@@ -128,61 +127,60 @@ function App() {
   const playCard = (cardIndex) => {
     socket.emit('playCard', { roomId, cardIndex });
   };
-
   return (
-    <GameProvider>
-      <div className="App">
-        {error && <div className="error-message">{error}</div>}
-        
-        {screen === 'lobby' && (
-          <Lobby
-            username={username}
-            setUsername={setUsername}
-            roomId={roomId}
-            setRoomId={setRoomId}
-            createRoom={createRoom}
-            joinRoom={joinRoom}
-          />
-        )}
-        
-        {screen === 'waitingRoom' && (
-          <div className="waiting-room">
-            <h2>部屋ID: {roomId}</h2>
-            <p>プレイヤーが参加するのを待っています...</p>
-            <div className="players-list">
-              <h3>プレイヤー:</h3>
-              <ul>
-                {players.map(player => (
-                  <li key={player.id}>{player.username} {player.id === playerId ? '(あなた)' : ''}</li>
-                ))}
-              </ul>
-            </div>
+    <div className="App">
+      {error && <div className="error-message">{error}</div>}
+      
+      {screen === 'lobby' && (
+        <Lobby
+          username={username}
+          setUsername={setUsername}
+          roomId={roomId}
+          setRoomId={setRoomId}
+          createRoom={createRoom}
+          joinRoom={joinRoom}
+        />
+      )}
+      
+      {screen === 'waitingRoom' && (
+        <div className="waiting-room">
+          <h2>部屋ID: {roomId}</h2>
+          <p>プレイヤーが参加するのを待っています...</p>
+          <div className="players-list">
+            <h3>プレイヤー:</h3>
+            <ul>
+              {players.map(player => (
+                <li key={player.id}>{player.username} {player.id === playerId ? '(あなた)' : ''}</li>
+              ))}
+            </ul>
           </div>
-        )}
-        
-        {screen === 'readyToStart' && (
-          <div className="ready-screen">
-            <h2>全プレイヤーが揃いました!</h2>
-            <button onClick={startGame} className="start-button">ゲームを開始</button>
-            <div className="players-list">
-              <h3>プレイヤー:</h3>
-              <ul>
-                {players.map(player => (
-                  <li key={player.id}>{player.username} {player.id === playerId ? '(あなた)' : ''}</li>
-                ))}
-              </ul>
-            </div>
+        </div>
+      )}
+      
+      {screen === 'readyToStart' && (
+        <div className="ready-screen">
+          <h2>全プレイヤーが揃いました!</h2>
+          <button onClick={startGame} className="start-button">ゲームを開始</button>
+          <div className="players-list">
+            <h3>プレイヤー:</h3>
+            <ul>
+              {players.map(player => (
+                <li key={player.id}>{player.username} {player.id === playerId ? '(あなた)' : ''}</li>
+              ))}
+            </ul>
           </div>
-        )}
-        
-        {screen === 'gameRoom' && (
-          <div className="game-room">
-            <GameField />
-            <PhaseControl />
-          </div>
-        )}
-      </div>
-    </GameProvider>
+        </div>
+      )}
+      
+      {screen === 'gameRoom' && gameState && (
+        <Game
+          socket={socket}
+          playerId={playerId}
+          gameState={gameState}
+          players={players}
+        />
+      )}
+    </div>
   );
 }
 

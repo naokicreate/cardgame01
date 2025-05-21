@@ -118,39 +118,71 @@ io.on('connection', (socket) => {
     io.in(roomId).emit('playerJoined', { 
       players: room.players
     });
-  });
-
-  // ゲームアクション
+  });  // ゲームアクション
   socket.on('gameAction', ({ roomId, action, data }) => {
     const room = gameRooms.get(roomId);
-    if (!room || !room.isStarted) return;
+    if (!room || !room.isStarted) {
+      socket.emit('error', { message: 'ゲームがまだ開始されていないか、部屋が存在しません。' });
+      return;
+    }
 
     const gameState = room.gameState;
-    if (gameState.currentPlayer !== socket.id) {
+    // アクションによって条件を変える（フェーズ変更はカレントプレイヤーだけができる）
+    if (gameState.currentPlayer !== socket.id && (action !== 'changePhase' || gameState.currentPlayer !== socket.id)) {
       socket.emit('error', { message: 'あなたのターンではありません。' });
       return;
     }
 
-    let newGameState;
+    let newGameState = { ...gameState };
+    console.log(`Game action received: ${action}`, data);
+
     switch (action) {
       case 'playCard':
         // カードプレイの処理
+        if (data && data.card) {
+          console.log(`Card played by ${socket.id}:`, data.card);
+          // ここにカードプレイのロジックを追加
+        }
         break;
+        
       case 'attack':
         // 攻撃の処理
+        if (data && data.attacker && data.target) {
+          console.log(`Attack from ${socket.id}:`, data);
+          // ここに攻撃のロジックを追加
+        }
         break;
-      case 'endPhase':
-        // フェーズ終了の処理
+        
+      case 'changePhase':
+        // フェーズ変更の処理
+        if (data && data.phase) {
+          newGameState.currentPhase = data.phase;
+          console.log(`Phase changed to ${data.phase} by ${socket.id}`);
+        }
         break;
+        
       case 'endTurn':
         // ターン終了の処理
+        const playerIds = room.players.map(p => p.id);
+        const currentPlayerIndex = playerIds.indexOf(gameState.currentPlayer);
+        const nextPlayerIndex = (currentPlayerIndex + 1) % playerIds.length;
+        newGameState.currentPlayer = playerIds[nextPlayerIndex];
+        newGameState.currentPhase = GAME_PHASES.START;
+        console.log(`Turn ended by ${socket.id}. Next player: ${newGameState.currentPlayer}`);
+        break;
+        
+      case 'selectCard':
+        // カード選択の処理
+        if (data && data.card) {
+          newGameState.selectedCard = data.card;
+          console.log(`Card selected by ${socket.id}:`, data.card);
+        }
         break;
     }
 
-    if (newGameState) {
-      room.gameState = newGameState;
-      io.in(roomId).emit('gameStateUpdate', { gameState: newGameState });
-    }
+    // 状態を更新して全員に通知
+    room.gameState = newGameState;
+    io.in(roomId).emit('gameStateUpdate', { gameState: newGameState });
   });
 
   // 切断時の処理
