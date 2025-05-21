@@ -5,50 +5,75 @@ import './Card.css';
 
 const Card = ({ card, onClick, onAttack, isPlayable }) => {
   const [showDetails, setShowDetails] = useState(false);
+  
+  // cardがnullまたはundefinedの場合は空のdivを返す
+  if (!card) {
+    console.warn('Card component received null or undefined card prop');
+    return <div className="card-placeholder"></div>;
+  }
+
+  // card.typeがない場合のフォールバックオブジェクト
+  const safeCard = {
+    name: card.name || 'カード',
+    type: card.type || 'UNIT',
+    cost: card.cost !== undefined ? card.cost : 0,
+    attack: card.attack !== undefined ? card.attack : 0,
+    health: card.health !== undefined ? card.health : 0,
+    illust_url: card.illust_url || '',
+    description: card.description || '',
+    effects: card.effects || [],
+    hasAttacked: card.hasAttacked || false,
+    ...card  // 元のカードデータで上書き
+  };
+
   const handleClick = (e) => {
     e.preventDefault();
-    if (isPlayable) {
+    if (isPlayable && onClick) {
       onClick();
     }
   };
 
   const handleAttack = (e) => {
     e.preventDefault();
-    if (isPlayable && card.type === 'UNIT' && !card.hasAttacked) {
+    if (isPlayable && safeCard.type === 'UNIT' && !safeCard.hasAttacked && onAttack) {
       onAttack();
     }
   };
+  
   return (
     <div 
-      className={`card ${card.type.toLowerCase()} ${isPlayable ? 'playable' : ''}`}
+      className={`card ${safeCard.type.toLowerCase()} ${isPlayable ? 'playable' : ''}`}
       onClick={handleClick}
       onContextMenu={handleAttack}
     >
       <div className="card-header">
-        <span className="card-name">{card.name}</span>
-        <span className="card-cost">{card.cost}</span>
+        <span className="card-name">{safeCard.name}</span>
+        <span className="card-cost">{safeCard.cost}</span>
       </div>
       
       <div className="card-image">
-        <img src={card.illust_url} alt={card.name} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+        {safeCard.illust_url && <img src={safeCard.illust_url} alt={safeCard.name} style={{width: '100%', height: '100%', objectFit: 'cover'}} />}
       </div>
       
-      {card.type === 'UNIT' && (
+      {safeCard.type === 'UNIT' && (
         <div className="card-stats">
-          <span className="attack">⚔️ {card.attack}</span>
-          <span className="health">❤️ {card.health}</span>
+          <span className="attack">⚔️ {safeCard.attack}</span>
+          <span className="health">❤️ {safeCard.health}</span>
         </div>
       )}
       
       <div className="card-text">
-        {card.description}
+        {safeCard.description}
       </div>
-        <div className="card-effects">
-        {card.effects.map((effect, index) => {
+      
+      <div className="card-effects">
+        {safeCard.effects.map((effect, index) => {
+          if (!effect || !effect.type) return null;
+          
           if (effect.type === 'KEYWORD') {
             return (
               <span key={index} className="effect-badge keyword">
-                {KEYWORDS[effect.name]}
+                {KEYWORDS[effect.name] || effect.name}
               </span>
             );
           }
@@ -63,13 +88,12 @@ const Card = ({ card, onClick, onAttack, isPlayable }) => {
                effect.action === 'HEAL_PLAYER' ? `${effect.value} 回復` :
                effect.action === 'BUFF_ATTACK' ? `攻撃力+${effect.value}` :
                effect.action === 'ADD_CORE' ? `${effect.value} コア獲得` :
-               effect.action}
+               effect.action || ''}
             </span>
           );
         })}
       </div>
-    </div>
-  );
+    </div>  );
 };
 
 export default Card;

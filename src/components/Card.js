@@ -2,6 +2,12 @@ import React from 'react';
 import './Card.css';
 
 function Card({ card, onClick, disabled }) {
+  // cardがnullまたはundefinedの場合は空のdivを返す
+  if (!card) {
+    console.warn('Card component received null or undefined card prop');
+    return <div className="card-placeholder"></div>;
+  }
+  
   const { suit, value } = card;
   
   const getColor = () => {
@@ -43,8 +49,7 @@ function Card({ card, onClick, disabled }) {
           <div className="card-suit">{getSuitSymbol()}</div>
         </div>
       </div>
-    </div>
-  );
+    </div>  );
 }
 
 export default Card;

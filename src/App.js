@@ -39,26 +39,27 @@ function App() {
     
     setSocket(newSocket);    // イベントリスナーを設定
     newSocket.on('roomCreated', ({ roomId, playerId }) => {
+      console.log('Room created event received:', { roomId, playerId });
       setRoomId(roomId);
       setPlayerId(playerId);
       setScreen('waitingRoom');
     });
 
     newSocket.on('roomJoined', ({ roomId, playerId }) => {
+      console.log('Room joined event received:', { roomId, playerId });
       setRoomId(roomId);
       setPlayerId(playerId);
       setScreen('waitingRoom');
     });
 
     newSocket.on('playerJoined', ({ players }) => {
+      console.log('Player joined event received:', players);
       setPlayers(players);
-    });
-
-    newSocket.on('readyToStart', () => {
+    });newSocket.on('readyToStart', ({ roomId }) => {
+      console.log('Ready to start game event received for room:', roomId);
       setScreen('readyToStart');
-    });
-
-    newSocket.on('gameStart', ({ gameState, players }) => {
+    });newSocket.on('gameStart', ({ gameState, players }) => {
+      console.log('Game start event received:', { gameState, players });
       setGameState(gameState);
       setPlayers(players);
       setScreen('gameRoom');
@@ -103,12 +104,12 @@ function App() {
       newSocket.disconnect();
     };
   }, []);
-
   const createRoom = () => {
     if (!username) {
       setError('ユーザー名を入力してください');
       return;
     }
+    console.log(`Creating room with username: ${username}`);
     socket.emit('createRoom', username);
   };
 
@@ -118,9 +119,9 @@ function App() {
       return;
     }
     socket.emit('joinRoom', { roomId, username });
-  };
-
-  const startGame = () => {
+  };  const startGame = () => {
+    console.log(`Starting game in room: ${roomId} with player ID: ${playerId}`);
+    console.log(`Current players:`, players);
     socket.emit('startGame', roomId);
   };
 
@@ -171,13 +172,13 @@ function App() {
           </div>
         </div>
       )}
-      
-      {screen === 'gameRoom' && gameState && (
+        {screen === 'gameRoom' && gameState && (
         <Game
           socket={socket}
           playerId={playerId}
           gameState={gameState}
           players={players}
+          roomId={roomId}
         />
       )}
     </div>

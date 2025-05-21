@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import GameField from './GameField/GameField';
 import './Game.css';
 
-const Game = ({ socket, playerId, gameState: externalGameState, players }) => {
+const Game = ({ socket, playerId, gameState: externalGameState, players, roomId }) => {
   const [gameState, setGameState] = useState(externalGameState || {
     currentPhase: 'WAITING',
     players: {},
@@ -13,10 +13,10 @@ const Game = ({ socket, playerId, gameState: externalGameState, players }) => {
     if (externalGameState) {
       setGameState(externalGameState);
     }
-  }, [externalGameState]);
-  const getRoomId = () => {
-    // プレイヤーのルームIDを取得するロジック
-    return players?.[0]?.id?.roomId || '';
+  }, [externalGameState]);  const getRoomId = () => {
+    // App.jsから受け取ったroomIdを使用
+    console.log('Using roomId:', roomId);
+    return roomId || '';
   };
 
   const handleCardPlay = (card, zone) => {
