@@ -63,20 +63,32 @@ function App() {
       setGameState(gameState);
       setPlayers(players);
       setScreen('gameRoom');
-    });
-
-    newSocket.on('gameStateUpdate', ({ gameState }) => {
+    });    newSocket.on('gameStateUpdate', ({ gameState }) => {
       console.log('Game state update received:', gameState);
       setGameState(gameState);
     });
 
-    newSocket.on('cardPlayed', ({ playerId, card, nextPlayer }) => {
-      console.log(`${playerId} played ${card.value} of ${card.suit}`);
+    // 新しいイベントを追加
+    newSocket.on('cardDrawn', ({ card }) => {
+      console.log('Card drawn:', card);
+      setHand(prevHand => [...prevHand, card]);
+    });
+
+    newSocket.on('cardPlayed', ({ playerId, card, zone, index, nextPlayer }) => {
+      console.log(`${playerId} played ${card.name}`);
       setCurrentPlayer(nextPlayer);
     });
 
-    newSocket.on('cardDrawn', ({ card }) => {
-      setHand(prevHand => [...prevHand, card]);
+    newSocket.on('attackResolved', ({ attacker, target, damage, remainingLp }) => {
+      console.log(`Attack: ${attacker.name} dealt ${damage} damage to player`, target);
+    });
+
+    newSocket.on('battleResolved', ({ attacker, target }) => {
+      console.log(`Battle: ${attacker.name} vs ${target.name}`);
+    });
+
+    newSocket.on('unitDestroyed', ({ unit, playerId }) => {
+      console.log(`Unit destroyed: ${unit.name} of player ${playerId}`);
     });
 
     newSocket.on('gameOver', ({ winner }) => {

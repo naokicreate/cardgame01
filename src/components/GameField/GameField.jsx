@@ -129,9 +129,11 @@ const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack }) => {
           </div>
         </div>
 
-        <div className="field-zones">
-          <div className="zone deck-zone">
-            <div className="deck-count">{getPlayerDataSafely('player2').deck.length || 0}枚</div>
+        <div className="field-zones">          <div className="zone deck-zone">
+            <div className="deck-count">
+              <span className="deck-count-label">デッキ:</span>
+              <span className="deck-count-value">{getPlayerDataSafely('player2').deck.length || 0}枚</span>
+            </div>
           </div>
           
           <div className="zone resource-zone">
@@ -195,10 +197,11 @@ const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack }) => {
                 onClick={() => handleCardClick(getPlayerDataSafely('player1').resourceCard, 'resource', 'player1')}
               />
             )}
-          </div>
-
-          <div className="zone deck-zone">
-            <div className="deck-count">{getPlayerDataSafely('player1').deck.length || 0}枚</div>
+          </div>          <div className="zone deck-zone">
+            <div className="deck-count">
+              <span className="deck-count-label">デッキ:</span>
+              <span className="deck-count-value">{getPlayerDataSafely('player1').deck.length || 0}枚</span>
+            </div>
           </div>
         </div>
 

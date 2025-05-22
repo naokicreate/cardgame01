@@ -1,9 +1,9 @@
 const GAME_PHASES = {
-  START: 'start',
-  DRAW: 'draw',
-  MAIN: 'main',
-  ATTACK: 'attack',
-  END: 'end'
+  START: 'START',
+  DRAW: 'DRAW',
+  MAIN: 'MAIN',
+  BATTLE: 'BATTLE',
+  END: 'END'
 };
 
 const GAME_CONSTANTS = {

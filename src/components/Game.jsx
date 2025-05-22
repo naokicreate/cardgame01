@@ -78,41 +78,41 @@ const Game = ({ socket, playerId, gameState: externalGameState, players, roomId 
         playerId={playerId}
         onCardPlay={handleCardPlay}
         onAttack={handleAttack}
-      />
-      <div className="game-controls">
+      />      <div className="game-controls">
         {isMyTurn && (
           <>
             <button
               onClick={() => handlePhaseChange('DRAW')}
-              disabled={gameState?.currentPhase === 'DRAW'}
-              className="phase-button"
+              disabled={gameState?.currentPhase !== 'START'}
+              className={`phase-button ${gameState?.currentPhase === 'START' ? 'next-phase' : ''}`}
             >
               ドローフェーズ
             </button>
             <button
               onClick={() => handlePhaseChange('MAIN')}
-              disabled={gameState?.currentPhase === 'MAIN'}
-              className="phase-button"
+              disabled={gameState?.currentPhase !== 'DRAW'}
+              className={`phase-button ${gameState?.currentPhase === 'DRAW' ? 'next-phase' : ''}`}
             >
               メインフェーズ
             </button>
             <button
               onClick={() => handlePhaseChange('BATTLE')}
-              disabled={gameState?.currentPhase === 'BATTLE'}
-              className="phase-button"
+              disabled={gameState?.currentPhase !== 'MAIN'}
+              className={`phase-button ${gameState?.currentPhase === 'MAIN' ? 'next-phase' : ''}`}
             >
               バトルフェーズ
             </button>
             <button
               onClick={() => handlePhaseChange('END')}
-              disabled={gameState?.currentPhase === 'END'}
-              className="phase-button"
+              disabled={gameState?.currentPhase !== 'BATTLE'}
+              className={`phase-button ${gameState?.currentPhase === 'BATTLE' ? 'next-phase' : ''}`}
             >
               エンドフェーズ
             </button>
             <button
               onClick={handleEndTurn}
-              className="end-turn-button"
+              disabled={gameState?.currentPhase !== 'END'}
+              className={`end-turn-button ${gameState?.currentPhase === 'END' ? 'active' : ''}`}
             >
               ターン終了
             </button>
