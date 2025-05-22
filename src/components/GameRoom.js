@@ -1,6 +1,6 @@
 import React from 'react';
 import './GameRoom.css';
-import Card from './Card';
+import Card from './Card/Card'; // 正しいパスに修正
 
 function GameRoom({ hand, playerId, currentPlayer, players, playCard }) {
   const isMyTurn = currentPlayer === playerId;

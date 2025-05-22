@@ -3,9 +3,11 @@
   flex-direction: column;
   gap: 2rem;
   padding: 2rem;
+  padding-bottom: 120px; /* 下部に余白を追加してPhaseControlと重ならないようにする */
   background: linear-gradient(to bottom, #1a1a1a, #2a2a2a);
   min-height: 100vh;
   color: white;
+  margin-bottom: 80px; /* フェーズコントロール用のスペースを確保 */
 }
 
 .phase-indicator {
@@ -18,6 +20,48 @@
   border-radius: 8px;
   z-index: 100;
   border: 1px solid #ffd700;
+}
+
+/* ステータスメッセージの共通スタイル */
+.status-message {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  z-index: 90;
+  font-weight: bold;
+  text-align: center;
+  min-width: 300px;
+  animation: fade-in 0.3s ease-in-out;
+  color: white;
+}
+
+/* バトルフェーズのステータスメッセージ */
+.battle-status-message {
+  background: rgba(139, 0, 0, 0.85); /* 赤色系の背景 */
+  border: 2px solid #ff4500; /* オレンジ赤の枠線 */
+  box-shadow: 0 0 15px rgba(255, 69, 0, 0.5);
+  animation: battle-pulse 2s infinite; /* 脈動アニメーション */
+}
+
+/* 通常のステータスメッセージ（バトル以外） */
+.status-message:not(.battle-status-message) {
+  background: rgba(0, 70, 139, 0.85); /* 青色系の背景 */
+  border: 2px solid #4585ff; /* 青色系の枠線 */
+  box-shadow: 0 0 15px rgba(69, 133, 255, 0.5);
+}
+
+@keyframes battle-pulse {
+  0% { box-shadow: 0 0 15px rgba(255, 69, 0, 0.5); }
+  50% { box-shadow: 0 0 25px rgba(255, 69, 0, 0.8); }
+  100% { box-shadow: 0 0 15px rgba(255, 69, 0, 0.5); }
+}
+
+@keyframes fade-in {
+  0% { opacity: 0; transform: translate(-50%, -60%); }
+  100% { opacity: 1; transform: translate(-50%, 0); }
 }
 
 .opponent-area,

@@ -1,17 +1,29 @@
 import React from 'react';
-import { useGame, PHASES } from '../../context/GameContext';
 import './PhaseControl.css';
 
-const PhaseControl = () => {
-  const { state, dispatch } = useGame();
-  const { phase, currentPlayer } = state;
+// フェーズの定数定義を直接含める
+const PHASES = {
+  START: 'START',
+  DRAW: 'DRAW',
+  MAIN: 'MAIN', 
+  BATTLE: 'BATTLE',
+  END: 'END'
+};
+
+const PhaseControl = ({ currentPhase = 'START', onPhaseChange, onEndTurn }) => {
+  // propsから渡された現在のフェーズとイベントハンドラを使用
+  const phase = currentPhase;
 
   const handlePhaseChange = (newPhase) => {
-    dispatch({ type: 'CHANGE_PHASE', payload: newPhase });
+    if (onPhaseChange) {
+      onPhaseChange(newPhase);
+    }
   };
 
   const handleEndTurn = () => {
-    dispatch({ type: 'END_TURN' });
+    if (onEndTurn) {
+      onEndTurn();
+    }
   };
 
   return (
@@ -65,10 +77,8 @@ const PhaseControl = () => {
             ターン終了
           </button>
         )}
-      </div>
-
-      <div className="turn-indicator">
-        {currentPlayer === 'player1' ? 'あなたのターン' : '相手のターン'}
+      </div>      <div className="turn-indicator">
+        あなたのターン
       </div>
     </div>
   );

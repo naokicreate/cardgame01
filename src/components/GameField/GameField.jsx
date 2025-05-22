@@ -2,9 +2,16 @@ import React from 'react';
 import Card from '../Card/Card';
 import './GameField.css';
 
-import { PHASES } from '../../context/GameContext';
+// PHASESをContextからインポートするのではなく、直接定義または渡されたものを使う
+const PHASES = {
+  START: 'START',
+  DRAW: 'DRAW',
+  MAIN: 'MAIN',
+  BATTLE: 'BATTLE',
+  END: 'END'
+};
 
-const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack }) => {
+const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack, currentPhase: propCurrentPhase, currentPlayer: propCurrentPlayer }) => {
   // IDベースのプレイヤー構造を従来のplayer1/player2形式に変換
   const getFormattedGameState = () => {
     const defaultState = {
@@ -12,8 +19,8 @@ const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack }) => {
         player1: { hand: [], field: [], deck: [], lifePoints: 8000, cores: 0 },
         player2: { hand: [], field: [], deck: [], lifePoints: 8000, cores: 0 }
       },
-      currentPlayer: null,
-      currentPhase: PHASES.START,
+      currentPlayer: propCurrentPlayer || null,
+      currentPhase: propCurrentPhase || PHASES.START,
       selectedCard: null
     };
 
@@ -75,10 +82,24 @@ const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack }) => {
         }
       }
     };
-  };
-
-  const formattedGameState = getFormattedGameState();
-  const { players, currentPlayer, currentPhase, selectedCard } = formattedGameState;
+  };  const formattedGameState = getFormattedGameState();
+  const { players } = formattedGameState;
+  // propsから渡された値を優先して使用
+  const currentPhase = propCurrentPhase || formattedGameState.currentPhase;
+  const currentPlayer = propCurrentPlayer || formattedGameState.currentPlayer;
+    // selectedCardの状態を管理するための状態変数
+  const [selectedCard, setSelectedCard] = React.useState(null);
+  // 選択状態をユーザーに示すためのメッセージ
+  const [statusMessage, setStatusMessage] = React.useState('');
+  
+  // デバッグログ
+  console.log('GameField state:', {
+    propCurrentPhase,
+    propCurrentPlayer,
+    currentPhase,
+    currentPlayer,
+    playerId
+  });
   
   // 安全なプレイヤーデータへのアクセスを保証するヘルパー関数
   const getPlayerDataSafely = (playerKey) => {
@@ -90,37 +111,192 @@ const GameField = ({ socket, gameState, playerId, onCardPlay, onAttack }) => {
       cores: 0,
       trapCard: null,
       resourceCard: null
-    };
-  };
+    };  };
   
-  const renderCards = (cards = [], zone, player) => {
-    return (cards || []).map((card, index) => (
-      <Card
-        key={`${player}-${zone}-${index}`}
-        card={card}
-        onClick={() => handleCardClick(card, zone, player)}
-        isPlayable={currentPlayer === playerId && currentPhase === PHASES.MAIN}
-      />
-    ));
-  };
-  
-  const handleCardClick = (card, zone, player) => {
-    if (player === currentPlayer && currentPhase === PHASES.MAIN) {
-      onCardPlay(card, zone);
-    } else if (currentPhase === PHASES.BATTLE && player === currentPlayer) {
-      // カードを選択
-      socket?.emit('gameAction', { 
-        action: 'selectCard', 
-        data: { card } 
-      });
-    } else if (currentPhase === PHASES.BATTLE && selectedCard && player !== currentPlayer) {
-      // 攻撃実行
-      onAttack(selectedCard, card);
+  const renderCards = (cards, zone, player) => {
+    // カードがundefinedまたはnullの場合、空の配列を使用
+    const safeCards = Array.isArray(cards) ? cards : [];
+      // カードがプレイ可能かどうかの判定を詳細化
+    const isHandCard = zone === 'hand';
+    const isMyCard = player === 'player1';
+    
+    // 文字列または型が異なる場合を考慮して比較
+    console.log('Current player check:', {currentPlayer, playerId});
+    const isMyTurn = String(currentPlayer || '') === String(playerId || '');
+    
+    // PHASESオブジェクトからの参照を確実にする
+    const isMainPhase = currentPhase === PHASES.MAIN || currentPhase === 'MAIN';
+    
+    // 手札のカードの場合のみ、自分のターンのメインフェーズでプレイ可能
+    const isCardPlayable = isHandCard && isMyCard && isMyTurn && isMainPhase;
+      console.log('Cards render:', {
+      zone,
+      player,
+      cardsCount: safeCards.length,
+      isMyTurn,
+      currentPhase,
+      isMainPhase,
+      isCardPlayable,
+      playerId,
+      currentPlayer
+    });      return safeCards.map((card, index) => {
+        // カードがnullの場合は空のプレースホルダーを表示
+        if (!card) {
+          return <div key={`${player}-${zone}-${index}-empty`} className="card-placeholder"></div>;
+        }
+        
+        // バトルフェーズで、カードが選択されているかどうかをチェック
+        const isSelected = selectedCard && card && selectedCard.id === card.id;
+        const isBattlePhase = currentPhase === PHASES.BATTLE || currentPhase === 'BATTLE';
+        
+        return (
+          <Card
+            key={`${player}-${zone}-${index}`}
+            card={card}
+            onClick={() => handleCardClick(card, zone, player)}
+            isPlayable={isCardPlayable || (isBattlePhase && isMyTurn && isMyCard && zone === 'field' && card && !card.hasAttacked && !card.summoningSickness)}
+            // クラス名に選択状態を追加
+            className={isSelected ? 'selected' : ''}
+            // 追加のデバッグ情報をdata属性に含める
+            data-playable={isCardPlayable}
+            data-zone={zone}
+            data-phase={currentPhase}
+            data-selected={isSelected}
+          />
+        );
+      });};
+    const handleCardClick = (card, zone, player) => {
+    console.log('Card click:', { 
+      card, 
+      zone, 
+      player, 
+      currentPhase,
+      currentPlayer, 
+      playerId
+    });
+    
+    // ステータスメッセージをクリア
+    setStatusMessage('');
+    
+    // MAIN/メインフェーズでのカードプレイ処理
+    // PHASESオブジェクトを確実に使用し、文字列比較も考慮
+    const isMainPhase = currentPhase === PHASES.MAIN || currentPhase === 'MAIN';
+    const isBattlePhase = currentPhase === PHASES.BATTLE || currentPhase === 'BATTLE';
+    
+    // 文字列変換して比較（型の不一致を防ぐ）
+    const isMyTurn = String(currentPlayer) === String(playerId);
+    const isMyCard = player === 'player1';
+    
+    if (!isMyTurn) {
+      setStatusMessage('あなたのターンではありません');
+      return;
     }
-  };
+    
+    console.log('Card playability check:', {
+      isMyTurn, 
+      isMyCard, 
+      isMainPhase,
+      isBattlePhase, 
+      zone, 
+      player, 
+      currentPlayer, 
+      playerId
+    });      // メインフェーズ処理
+    if (isMyTurn && isMyCard && isMainPhase && zone === 'hand') {
+      // カードがnullでないことを確認
+      if (!card) {
+        console.log('❌ Cannot play null card');
+        setStatusMessage('エラー: 無効なカードです');
+        return;
+      }
+      
+      console.log('✅ Playing card:', card);
+      // カードのコスト確認をクライアント側でも行う
+      const playerCores = getPlayerDataSafely('player1').cores;
+      if (card.cost > playerCores) {
+        setStatusMessage(`コストが足りません：${card.cost}コスト > ${playerCores}コア`);
+        return;
+      }
+      
+      setStatusMessage(`${card.name}を場に出します！`);
+      
+      // カード使用時のイベントを発火
+      if (onCardPlay) {
+        onCardPlay(card, zone);
+      }
+    }// バトルフェーズ処理
+    else if ((currentPhase === PHASES.BATTLE || currentPhase === 'BATTLE') && isMyTurn) {
+      if (isMyCard && zone === 'field') {        // カードがnullでないか確認
+        if (!card) {
+          console.log('❌ Card is null or undefined');
+          setStatusMessage('無効なカードです');
+          return;
+        }
 
-  return (
+        // 召喚酔いや攻撃済みのユニットはチェック
+        if (card.summoningSickness) {
+          console.log('❌ Unit has summoning sickness:', card.name);
+          setStatusMessage(`${card.name || 'このユニット'}は召喚酔いのため、このターンは攻撃できません`);
+          return;
+        }
+        
+        if (card.hasAttacked) {
+          console.log('❌ Unit has already attacked:', card.name);
+          setStatusMessage(`${card.name || 'このユニット'}はすでにこのターンに攻撃しています`);
+          return;
+        }
+        
+        // 自分のユニットを選択（攻撃元）
+        console.log('✅ Selecting attacker card:', card);
+        setSelectedCard(card); // カードを選択状態に設定
+        setStatusMessage(`${card.name}で攻撃します - 相手のユニットを選択してください`);
+      } else if (!isMyCard) {
+        if (selectedCard) {
+          // 相手のカードが選択された場合（攻撃先）
+          console.log('✅ Attacking with:', selectedCard, 'target:', card);
+          setStatusMessage(`${selectedCard.name}が${card.name}に攻撃します！`);
+          
+          // 攻撃処理を実行
+          if (onAttack) {
+            onAttack(selectedCard, card);
+          }
+          
+          // 選択をリセット
+          setSelectedCard(null);
+        } else {
+          // 攻撃元が選択されていない
+          console.log('❌ No attacker selected yet');
+          setStatusMessage('先に自分のユニットを選択してください');
+        }
+      }    } else if (!isMainPhase && !isBattlePhase) {
+      console.log('❌ Card cannot be played in current phase:', { currentPhase });
+      setStatusMessage(`現在の${currentPhase}フェーズではカードの操作ができません`);
+    } else if (!isMyCard && isBattlePhase && zone !== 'field') {
+      console.log('❌ Cannot select this card type in battle phase:', { zone });
+      setStatusMessage('バトルフェーズでは場のカードのみ選択できます');
+    } else {
+      console.log('❌ Card cannot be played in current phase/condition:', {
+        isMainPhase, 
+        isMyTurn, 
+        isMyCard, 
+        zone, 
+        currentPhase
+      });
+      setStatusMessage('この操作は現在実行できません');
+    }
+  };  return (
     <div className="game-field">
+      {/* バトルフェーズ中または状態メッセージがある場合、メッセージを表示 */}
+      {((currentPhase === PHASES.BATTLE || currentPhase === 'BATTLE') || statusMessage) && (
+        <div className={`status-message ${currentPhase === PHASES.BATTLE || currentPhase === 'BATTLE' ? 'battle-status-message' : ''}`}>
+          {statusMessage || (
+            selectedCard ? 
+              `攻撃ユニット：${selectedCard.name} (攻撃力: ${selectedCard.attack}) - 相手のユニットを選んで攻撃してください` : 
+              '攻撃に使うユニットを選択してください'
+          )}
+        </div>
+      )}
+      
       <div className="opponent-area">
         <div className="player-stats">
           <div className="player-info">

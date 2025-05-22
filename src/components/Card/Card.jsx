@@ -3,13 +3,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { KEYWORDS } from '../../data/cards';
 import './Card.css';
 
-const Card = ({ card, onClick, onAttack, isPlayable }) => {
+const Card = ({ 
+  card, 
+  onClick, 
+  onAttack, 
+  isPlayable, 
+  isOpponent = false, 
+  inHand = false,
+  className = '' 
+}) => {
   const [showDetails, setShowDetails] = useState(false);
   
   // cardがnullまたはundefinedの場合は空のdivを返す
   if (!card) {
-    console.warn('Card component received null or undefined card prop');
     return <div className="card-placeholder"></div>;
+  }
+
+  // 相手の手札の場合は裏向きのカードを表示
+  if (isOpponent && inHand) {
+    return (
+      <div className="card card-back">
+        <div className="card-back-design"></div>
+      </div>
+    );
   }
 
   // card.typeがない場合のフォールバックオブジェクト
@@ -28,21 +44,27 @@ const Card = ({ card, onClick, onAttack, isPlayable }) => {
 
   const handleClick = (e) => {
     e.preventDefault();
-    if (isPlayable && onClick) {
+    if (onClick) {
       onClick();
     }
   };
 
   const handleAttack = (e) => {
     e.preventDefault();
-    if (isPlayable && safeCard.type === 'UNIT' && !safeCard.hasAttacked && onAttack) {
+    if (safeCard.type === 'UNIT' && onAttack) {
       onAttack();
     }
   };
-  
+
+  // フィールド上のカードは常に正面（プレイヤー側）を向くように
+  const cardClass = `card ${safeCard.type.toLowerCase()} 
+    ${isPlayable ? 'playable' : ''} 
+    ${className} 
+    ${isOpponent ? 'opponent-card' : ''}`;
+
   return (
     <div 
-      className={`card ${safeCard.type.toLowerCase()} ${isPlayable ? 'playable' : ''}`}
+      className={cardClass}
       onClick={handleClick}
       onContextMenu={handleAttack}
     >
@@ -93,7 +115,8 @@ const Card = ({ card, onClick, onAttack, isPlayable }) => {
           );
         })}
       </div>
-    </div>  );
+    </div>  
+  );
 };
 
 export default Card;

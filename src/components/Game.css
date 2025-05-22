@@ -20,6 +20,7 @@
   border-radius: 4px;
 }
 
+/* ゲームコントロールはPhaseControlコンポーネントに移行したためコメントアウト
 .game-controls {
   padding: 1rem;
   display: flex;
@@ -40,6 +41,7 @@
 .game-controls button:hover {
   background-color: #5a5a5a;
 }
+*/
 
 .your-turn {
   color: #4caf50;
